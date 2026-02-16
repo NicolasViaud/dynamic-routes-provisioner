@@ -14,6 +14,7 @@ import (
 
 	corecert "github.com/nicol/dynamic-route-provisioner/core/certificate"
 
+	certacmedns "github.com/nicol/dynamic-route-provisioner/cert-acme-dns"
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
 	certselfsigned "github.com/nicol/dynamic-route-provisioner/cert-selfsigned"
 	corelease "github.com/nicol/dynamic-route-provisioner/core/lease"
@@ -25,7 +26,7 @@ import (
 	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/certificate"
 	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/config"
 	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/provisioner"
-	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/trigger"
+	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/source"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -59,12 +60,12 @@ func main() {
 	defer mongoClient.Disconnect(ctx)
 
 	collection := mongoClient.Database(cfg.Datasource.Database).Collection(cfg.Datasource.Collection)
-	trig := sourcemongo.New(collection, &trigger.WorkspaceMapper{})
+	trig := sourcemongo.New(collection, &source.MongoMapper{})
 
 	// --- Certificate issuer ---
 	var issuer corecert.Issuer
 	switch cfg.Certificate.Provider {
-	case "acme":
+	case "acme-http":
 		challengeServer := certificate.NewChallengeServer(cfg.Certificate.ChallengePort)
 		acmeOpts := []certacmehttp.Option{
 			certacmehttp.WithEmail(cfg.Certificate.Email),
@@ -76,6 +77,22 @@ func main() {
 		issuer, err = certacmehttp.New(challengeServer, acmeOpts...)
 		if err != nil {
 			logger.Error("failed to create acme issuer", "error", err)
+			os.Exit(1)
+		}
+	case "acme-dns":
+		// TODO: wire a concrete DNSProvider implementation here.
+		// Example: dnsProvider := mydns.NewCloudflareProvider(...)
+		var dnsProvider certacmedns.DNSProvider
+		dnsOpts := []certacmedns.Option{
+			certacmedns.WithEmail(cfg.Certificate.Email),
+		}
+		if cfg.Certificate.DirectoryURL != "" {
+			dnsOpts = append(dnsOpts, certacmedns.WithDirectoryURL(cfg.Certificate.DirectoryURL))
+		}
+		var err error
+		issuer, err = certacmedns.New(dnsProvider, dnsOpts...)
+		if err != nil {
+			logger.Error("failed to create acme-dns issuer", "error", err)
 			os.Exit(1)
 		}
 	case "selfsigned":
@@ -107,7 +124,7 @@ func main() {
 	prov := provnetscaler.New(&provisioner.NetscalerMapper{}, netscalerOpts...)
 
 	// --- Reconciler ---
-	desiredState := sourcemongo.NewDesiredState(collection, &trigger.WorkspaceMapper{})
+	desiredState := sourcemongo.NewDesiredState(collection, &source.MongoMapper{})
 	rec := reconciler.New(desiredState, issuer, prov, logger)
 
 	reconcileInterval, err := time.ParseDuration(cfg.Reconcile.Interval)

@@ -19,6 +19,7 @@ core/                              # Interfaces + domain model (no external deps
   orchestrator/                    # Orchestrator — wires everything, supports leader election
 impl/                              # Implementation modules (each its own Go module)
   source-mongo/                    # MongoDB change stream trigger + desired state (ext: DocumentMapper)
+  cert-acme-dns/                   # ACME DNS-01 issuer (ext: DNSProvider)
   cert-acme-http/                  # ACME HTTP-01 issuer (ext: ChallengeSolver)
   cert-selfsigned/                 # Self-signed certificate issuer (testing)
   provisioner-netscaler/           # Netscaler CPX via Nitro API (ext: ResourceMapper)

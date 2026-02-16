@@ -39,10 +39,10 @@ type DatasourceConfig struct {
 }
 
 type CertificateConfig struct {
-	Provider      string `mapstructure:"provider"` // "acme" or "selfsigned"
-	Email         string `mapstructure:"email"`
-	DirectoryURL  string `mapstructure:"directory_url"`
-	ChallengePort int    `mapstructure:"challenge_port"`
+	Provider      string `mapstructure:"provider"` // "acme-http", "acme-dns", or "selfsigned"
+	Email         string `mapstructure:"email"`          // acme-http/acme-dns
+	DirectoryURL  string `mapstructure:"directory_url"`  // acme-http/acme-dns
+	ChallengePort int    `mapstructure:"challenge_port"` // acme-http only
 	Validity      string `mapstructure:"validity"`     // selfsigned only
 	Organization  string `mapstructure:"organization"` // selfsigned only
 }
@@ -64,7 +64,7 @@ func Load(path string) (*Config, error) {
 	// Defaults.
 	v.SetDefault("datasource.provider", "mongodb")
 	v.SetDefault("datasource.collection", "workspace")
-	v.SetDefault("certificate.provider", "acme")
+	v.SetDefault("certificate.provider", "acme-http")
 	v.SetDefault("certificate.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
 	v.SetDefault("certificate.challenge_port", 80)
 	v.SetDefault("certificate.validity", "8760h")
@@ -122,9 +122,9 @@ func validate(c *Config) error {
 		return fmt.Errorf("provisioner.endpoint is required (or set ROUTES_PROVISIONER_ENDPOINT)")
 	}
 	switch c.Certificate.Provider {
-	case "acme", "selfsigned":
+	case "acme-http", "acme-dns", "selfsigned":
 	default:
-		return fmt.Errorf("certificate.provider must be 'acme' or 'selfsigned' (or set ROUTES_CERTIFICATE_PROVIDER)")
+		return fmt.Errorf("certificate.provider must be 'acme-http', 'acme-dns', or 'selfsigned' (or set ROUTES_CERTIFICATE_PROVIDER)")
 	}
 	if c.LeaderElection.Enabled {
 		switch c.LeaderElection.Provider {

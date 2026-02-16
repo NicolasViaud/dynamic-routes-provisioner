@@ -3,6 +3,7 @@ go 1.25.4
 use (
 	./cmd/routes-provisioner
 	./core
+	./impl/cert-acme-dns
 	./impl/cert-acme-http
 	./impl/cert-selfsigned
 	./impl/lease-kube

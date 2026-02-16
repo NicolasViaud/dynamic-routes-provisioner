@@ -5,12 +5,13 @@ datasource:
   collection: "workspace"              # ROUTES_DATASOURCE_COLLECTION
 
 certificate:
-  provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme" or "selfsigned"
-  # --- acme settings ---
+  provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", or "selfsigned"
+  # --- acme-http / acme-dns common settings ---
   email: "admin@example.com"            # ROUTES_CERTIFICATE_EMAIL
   directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory"  # ROUTES_CERTIFICATE_DIRECTORY_URL
+  # --- acme-http only ---
   challenge_port: 80                    # ROUTES_CERTIFICATE_CHALLENGE_PORT
-  # --- selfsigned settings ---
+  # --- selfsigned only ---
   validity: "8760h"                     # ROUTES_CERTIFICATE_VALIDITY — default 1 year
   organization: "Self-Signed"           # ROUTES_CERTIFICATE_ORGANIZATION
 

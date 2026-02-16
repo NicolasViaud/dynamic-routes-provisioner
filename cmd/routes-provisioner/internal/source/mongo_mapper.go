@@ -1,4 +1,4 @@
-package trigger
+package source
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 )
 
 // Compile-time check.
-var _ sourcemongo.DocumentMapper = (*WorkspaceMapper)(nil)
+var _ sourcemongo.DocumentMapper = (*MongoMapper)(nil)
 
-// WorkspaceMapper watches the workspace collection for documents containing
+// MongoMapper watches the workspace collection for documents containing
 // a "url" field and converts them into RouteEvents.
-type WorkspaceMapper struct{}
+type MongoMapper struct{}
 
 // Pipeline filters change events to only receive inserts, updates, and deletes.
-func (m *WorkspaceMapper) Pipeline() mongo.Pipeline {
+func (m *MongoMapper) Pipeline() mongo.Pipeline {
 	return mongo.Pipeline{
 		{{Key: "$match", Value: bson.D{
 			{Key: "operationType", Value: bson.D{
@@ -32,7 +32,7 @@ func (m *WorkspaceMapper) Pipeline() mongo.Pipeline {
 
 // MapEvent converts a MongoDB change stream event into a RouteEvent by
 // reading the "url" field from the workspace document.
-func (m *WorkspaceMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core.RouteEvent, error) {
+func (m *MongoMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core.RouteEvent, error) {
 	opType, _ := changeEvent["operationType"].(string)
 
 	// Handle deletes — no fullDocument available.
@@ -93,7 +93,7 @@ func (m *WorkspaceMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core
 
 // MapDocument converts a full workspace document into a RouteRequest.
 // Used by the desired state provider during reconciliation.
-func (m *WorkspaceMapper) MapDocument(_ context.Context, doc bson.M) (*core.RouteRequest, error) {
+func (m *MongoMapper) MapDocument(_ context.Context, doc bson.M) (*core.RouteRequest, error) {
 	rawURL, ok := doc["url"].(string)
 	if !ok || rawURL == "" {
 		return nil, nil

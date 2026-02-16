@@ -38,6 +38,7 @@ dynamic-route-provisioner/
 │   └── orchestrator/                  # Orchestrator (pipeline coordinator)
 ├── impl/
 │   ├── source-mongo/                  # MongoDB change stream trigger + desired state
+│   ├── cert-acme-dns/                 # ACME DNS-01 certificate issuer
 │   ├── cert-acme-http/                # ACME HTTP-01 certificate issuer
 │   ├── cert-selfsigned/               # Self-signed certificate issuer (testing)
 │   ├── provisioner-netscaler/         # Netscaler CPX (Nitro API) provisioner
@@ -90,6 +91,7 @@ type LeaderElector interface {
 | Module | Interface | Extension point | Description |
 |---|---|---|---|
 | `source-mongo` | `Trigger` + `DesiredStateProvider` | `DocumentMapper` | MongoDB change streams + full collection listing for reconciliation |
+| `cert-acme-dns` | `Issuer` | `DNSProvider` | ACME DNS-01 challenges (supports wildcards) |
 | `cert-acme-http` | `Issuer` | `ChallengeSolver` | ACME HTTP-01 challenges |
 | `cert-selfsigned` | `Issuer` | — | Self-signed certificates for testing/development |
 | `provisioner-netscaler` | `RouteProvisioner` | `ResourceMapper` | Netscaler CPX via Nitro REST API (incl. batch and list) |
@@ -112,10 +114,10 @@ datasource:
   collection: "workspace"               # ROUTES_DATASOURCE_COLLECTION
 
 certificate:
-  provider: "selfsigned"                 # ROUTES_CERTIFICATE_PROVIDER — "acme" or "selfsigned"
-  email: "admin@example.com"             # ROUTES_CERTIFICATE_EMAIL (acme only)
-  directory_url: "https://acme-..."      # ROUTES_CERTIFICATE_DIRECTORY_URL (acme only)
-  challenge_port: 80                     # ROUTES_CERTIFICATE_CHALLENGE_PORT (acme only)
+  provider: "selfsigned"                 # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", or "selfsigned"
+  email: "admin@example.com"             # ROUTES_CERTIFICATE_EMAIL (acme-http/acme-dns)
+  directory_url: "https://acme-..."      # ROUTES_CERTIFICATE_DIRECTORY_URL (acme-http/acme-dns)
+  challenge_port: 80                     # ROUTES_CERTIFICATE_CHALLENGE_PORT (acme-http only)
   validity: "8760h"                      # ROUTES_CERTIFICATE_VALIDITY (selfsigned only)
   organization: "Self-Signed"            # ROUTES_CERTIFICATE_ORGANIZATION (selfsigned only)
 
