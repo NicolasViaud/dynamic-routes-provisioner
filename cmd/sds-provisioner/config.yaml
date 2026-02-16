@@ -16,3 +16,11 @@ netscaler:
 
 reconcile:
   interval: "5m"  # SDS_RECONCILE_INTERVAL — how often to reconcile desired vs actual state
+
+leader_election:
+  enabled: false          # SDS_LEADER_ELECTION_ENABLED — enable leader election for HA
+  lease_name: "sds-provisioner-leader"  # SDS_LEADER_ELECTION_LEASE_NAME
+  namespace: "default"    # SDS_LEADER_ELECTION_NAMESPACE — Kubernetes namespace for the Lease
+  lease_duration: "15s"   # SDS_LEADER_ELECTION_LEASE_DURATION
+  renew_deadline: "10s"   # SDS_LEADER_ELECTION_RENEW_DEADLINE
+  retry_interval: "2s"    # SDS_LEADER_ELECTION_RETRY_INTERVAL

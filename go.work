@@ -4,6 +4,8 @@ use (
 	./cmd/sds-provisioner
 	./core
 	./impl/cert-acme-http
+	./impl/lease-kube
+	./impl/lease-mongo
 	./impl/provisioner-netscaler
 	./impl/trigger-mongo
 )

@@ -12,15 +12,20 @@ core/                              # Interfaces + domain model (no external deps
   route.go                         # Domain types: RouteRequest, Certificate, RouteEvent, ...
   trigger/                         # Trigger interface
   certificate/                     # Issuer interface
-  provisioner/                     # RouteProvisioner interface
-  orchestrator/                    # Orchestrator — wires Trigger → Issuer → Provisioner
+  provisioner/                     # RouteProvisioner interface (incl. List, Batch*)
+  desired/                         # DesiredStateProvider interface
+  reconciler/                      # Reconciler — compares desired vs actual, batch-applies diff
+  lease/                           # LeaderElector interface
+  orchestrator/                    # Orchestrator — wires everything, supports leader election
 impl/                              # Implementation modules (each its own Go module)
   trigger-mongo/                   # MongoDB change stream trigger (ext: DocumentMapper)
   cert-acme-http/                  # ACME HTTP-01 issuer (ext: ChallengeSolver)
   provisioner-netscaler/           # Netscaler CPX via Nitro API (ext: ResourceMapper)
+  lease-mongo/                     # MongoDB-based leader election
+  lease-kube/                      # Kubernetes Lease API leader election (coordination/v1)
 cmd/
   sds-provisioner/                 # Concrete use-case app (standard Go layout)
-    cmd/sds-provisioner/main.go    # Entrypoint
+    main.go                        # Entrypoint
     internal/config/               # Viper-based config (YAML + SDS_* env overrides)
     internal/trigger/              # WorkspaceMapper (MongoDB workspace collection)
     internal/certificate/          # ChallengeServer (HTTP-01 solver)
@@ -48,8 +53,9 @@ No tests yet. When adding: `go test ./...` from the module directory.
 - Compile-time interface assertions: `var _ <interface> = (*Struct)(nil)`
 - `context.Context` on all blocking/IO methods, `log/slog` for logging
 - `go.work` for local module resolution (not published remotely yet)
-- `cmd/` apps use standard Go layout (`cmd/`, `internal/`) with Viper for config
+- `cmd/` apps use standard Go layout (`internal/`) with Viper for config
 - Env var override convention: `SDS_` prefix, `_` as delimiter (e.g. `SDS_MONGODB_URI`)
+- `sync.Mutex` in orchestrator serializes event handling and reconciliation
 
 ## Adding a new impl module
 

@@ -13,6 +13,7 @@ import (
 	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
 
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
+	leasekube "github.com/nicol/dynamic-route-provisioner/lease-kube"
 	provnetscaler "github.com/nicol/dynamic-route-provisioner/provisioner-netscaler"
 	triggermongo "github.com/nicol/dynamic-route-provisioner/trigger-mongo"
 
@@ -23,6 +24,8 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 func main() {
@@ -91,9 +94,58 @@ func main() {
 	}
 
 	// --- Orchestrator ---
-	o := orchestrator.New(trig, issuer, prov, logger,
+	orchOpts := []orchestrator.Option{
 		orchestrator.WithReconciler(rec, reconcileInterval),
-	)
+	}
+
+	// --- Leader Election (optional) ---
+	if cfg.LeaderElection.Enabled {
+		identity := cfg.LeaderElection.Identity
+		if identity == "" {
+			identity, _ = os.Hostname()
+		}
+
+		leaseDuration, err := time.ParseDuration(cfg.LeaderElection.LeaseDuration)
+		if err != nil {
+			logger.Error("invalid leader_election.lease_duration", "value", cfg.LeaderElection.LeaseDuration, "error", err)
+			os.Exit(1)
+		}
+		renewDeadline, err := time.ParseDuration(cfg.LeaderElection.RenewDeadline)
+		if err != nil {
+			logger.Error("invalid leader_election.renew_deadline", "value", cfg.LeaderElection.RenewDeadline, "error", err)
+			os.Exit(1)
+		}
+		retryPeriod, err := time.ParseDuration(cfg.LeaderElection.RetryInterval)
+		if err != nil {
+			logger.Error("invalid leader_election.retry_interval", "value", cfg.LeaderElection.RetryInterval, "error", err)
+			os.Exit(1)
+		}
+
+		kubeConfig, err := rest.InClusterConfig()
+		if err != nil {
+			logger.Error("failed to get in-cluster config", "error", err)
+			os.Exit(1)
+		}
+		clientset, err := kubernetes.NewForConfig(kubeConfig)
+		if err != nil {
+			logger.Error("failed to create kubernetes client", "error", err)
+			os.Exit(1)
+		}
+
+		elector := leasekube.New(clientset,
+			leasekube.WithNamespace(cfg.LeaderElection.Namespace),
+			leasekube.WithLeaseName(cfg.LeaderElection.LeaseName),
+			leasekube.WithIdentity(identity),
+			leasekube.WithLeaseDuration(leaseDuration),
+			leasekube.WithRenewDeadline(renewDeadline),
+			leasekube.WithRetryPeriod(retryPeriod),
+		)
+
+		orchOpts = append(orchOpts, orchestrator.WithLeaderElection(elector))
+		logger.Info("leader election enabled", "identity", identity, "namespace", cfg.LeaderElection.Namespace)
+	}
+
+	o := orchestrator.New(trig, issuer, prov, logger, orchOpts...)
 
 	logger.Info("sds-provisioner starting",
 		"mongodb", cfg.MongoDB.URI,

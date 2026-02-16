@@ -9,6 +9,7 @@ import (
 
 	core "github.com/nicol/dynamic-route-provisioner/core"
 	"github.com/nicol/dynamic-route-provisioner/core/certificate"
+	"github.com/nicol/dynamic-route-provisioner/core/lease"
 	"github.com/nicol/dynamic-route-provisioner/core/provisioner"
 	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
 	"github.com/nicol/dynamic-route-provisioner/core/trigger"
@@ -24,6 +25,7 @@ type Orchestrator struct {
 	provisioner       provisioner.RouteProvisioner
 	reconciler        *reconciler.Reconciler
 	reconcileInterval time.Duration
+	leaderElector     lease.LeaderElector
 	logger            *slog.Logger
 	mu                sync.Mutex // serializes event handling and reconciliation
 }
@@ -37,6 +39,16 @@ func WithReconciler(r *reconciler.Reconciler, interval time.Duration) Option {
 	return func(o *Orchestrator) {
 		o.reconciler = r
 		o.reconcileInterval = interval
+	}
+}
+
+// WithLeaderElection enables leader election. When set, the orchestrator
+// only processes events and runs reconciliation while this instance is the
+// leader. On leadership loss the event loop and reconciliation stop; on
+// re-election they restart automatically.
+func WithLeaderElection(le lease.LeaderElector) Option {
+	return func(o *Orchestrator) {
+		o.leaderElector = le
 	}
 }
 
@@ -56,8 +68,31 @@ func New(t trigger.Trigger, i certificate.Issuer, p provisioner.RouteProvisioner
 	return o
 }
 
-// Run starts the orchestrator. It blocks until the context is cancelled.
+// Run starts the orchestrator. If leader election is configured, it blocks
+// until leadership is acquired before starting the event loop and
+// reconciliation. It blocks until the context is cancelled.
 func (o *Orchestrator) Run(ctx context.Context) error {
+	if o.leaderElector == nil {
+		return o.run(ctx)
+	}
+
+	o.logger.Info("leader election enabled", "elector", o.leaderElector.Name())
+
+	return o.leaderElector.Run(ctx, lease.LeaderCallbacks{
+		OnStartedLeading: func(leaderCtx context.Context) {
+			o.logger.Info("became leader, starting orchestrator")
+			if err := o.run(leaderCtx); err != nil && leaderCtx.Err() == nil {
+				o.logger.Error("orchestrator failed while leading", "error", err)
+			}
+		},
+		OnStoppedLeading: func() {
+			o.logger.Info("lost leadership, orchestrator paused")
+		},
+	})
+}
+
+// run contains the core orchestrator loop.
+func (o *Orchestrator) run(ctx context.Context) error {
 	// Run initial reconciliation if configured (no lock needed — nothing else running yet).
 	if o.reconciler != nil {
 		o.logger.Info("running initial reconciliation")

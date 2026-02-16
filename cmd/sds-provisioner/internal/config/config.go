@@ -9,10 +9,21 @@ import (
 )
 
 type Config struct {
-	MongoDB    MongoDBConfig    `mapstructure:"mongodb"`
-	ACME       ACMEConfig       `mapstructure:"acme"`
-	Netscaler  NetscalerConfig  `mapstructure:"netscaler"`
-	Reconcile  ReconcileConfig  `mapstructure:"reconcile"`
+	MongoDB        MongoDBConfig        `mapstructure:"mongodb"`
+	ACME           ACMEConfig           `mapstructure:"acme"`
+	Netscaler      NetscalerConfig      `mapstructure:"netscaler"`
+	Reconcile      ReconcileConfig      `mapstructure:"reconcile"`
+	LeaderElection LeaderElectionConfig `mapstructure:"leader_election"`
+}
+
+type LeaderElectionConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	LeaseName     string `mapstructure:"lease_name"`
+	Namespace     string `mapstructure:"namespace"`
+	LeaseDuration string `mapstructure:"lease_duration"`
+	RenewDeadline string `mapstructure:"renew_deadline"`
+	RetryInterval string `mapstructure:"retry_interval"`
+	Identity      string `mapstructure:"identity"`
 }
 
 type ReconcileConfig struct {
@@ -49,6 +60,12 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("acme.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
 	v.SetDefault("acme.challenge_port", 80)
 	v.SetDefault("reconcile.interval", "5m")
+	v.SetDefault("leader_election.enabled", false)
+	v.SetDefault("leader_election.lease_name", "sds-provisioner-leader")
+	v.SetDefault("leader_election.namespace", "default")
+	v.SetDefault("leader_election.lease_duration", "15s")
+	v.SetDefault("leader_election.renew_deadline", "10s")
+	v.SetDefault("leader_election.retry_interval", "2s")
 
 	// YAML file.
 	v.SetConfigFile(path)
