@@ -1,0 +1,9 @@
+go 1.25.4
+
+use (
+	./cmd/sds-provisioner
+	./core
+	./impl/cert-acme-http
+	./impl/provisioner-netscaler
+	./impl/trigger-mongo
+)

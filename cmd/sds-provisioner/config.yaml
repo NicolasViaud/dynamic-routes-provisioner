@@ -1,0 +1,15 @@
+mongodb:
+  uri: "mongodb://localhost:27017"
+  database: "mydb"
+  collection: "workspace"
+
+acme:
+  email: "admin@example.com"
+  directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory"
+  challenge_port: 80
+
+netscaler:
+  endpoint: "https://10.0.0.1"
+  username: "nsroot"
+  password: "secret"
+  insecure_skip_verify: true
