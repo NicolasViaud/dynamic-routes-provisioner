@@ -13,3 +13,6 @@ netscaler:
   username: "nsroot"
   password: "secret"
   insecure_skip_verify: true
+
+reconcile:
+  interval: "5m"  # SDS_RECONCILE_INTERVAL — how often to reconcile desired vs actual state

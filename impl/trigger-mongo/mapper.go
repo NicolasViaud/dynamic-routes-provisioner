@@ -20,4 +20,9 @@ type DocumentMapper interface {
 	// core.RouteEvent. Return (nil, nil) to silently skip an event that is
 	// not relevant.
 	MapEvent(ctx context.Context, changeEvent bson.M) (*core.RouteEvent, error)
+
+	// MapDocument converts a full document into a RouteRequest.
+	// Used by the desired state provider to list all existing routes.
+	// Return (nil, nil) to skip a document that is not relevant.
+	MapDocument(ctx context.Context, doc bson.M) (*core.RouteRequest, error)
 }

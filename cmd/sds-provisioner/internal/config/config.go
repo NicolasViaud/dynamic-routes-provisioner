@@ -9,9 +9,14 @@ import (
 )
 
 type Config struct {
-	MongoDB   MongoDBConfig   `mapstructure:"mongodb"`
-	ACME      ACMEConfig      `mapstructure:"acme"`
-	Netscaler NetscalerConfig `mapstructure:"netscaler"`
+	MongoDB    MongoDBConfig    `mapstructure:"mongodb"`
+	ACME       ACMEConfig       `mapstructure:"acme"`
+	Netscaler  NetscalerConfig  `mapstructure:"netscaler"`
+	Reconcile  ReconcileConfig  `mapstructure:"reconcile"`
+}
+
+type ReconcileConfig struct {
+	Interval string `mapstructure:"interval"`
 }
 
 type MongoDBConfig struct {
@@ -43,6 +48,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("mongodb.collection", "workspace")
 	v.SetDefault("acme.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
 	v.SetDefault("acme.challenge_port", 80)
+	v.SetDefault("reconcile.interval", "5m")
 
 	// YAML file.
 	v.SetConfigFile(path)

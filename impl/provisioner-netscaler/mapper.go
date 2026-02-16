@@ -21,4 +21,15 @@ type ResourceMapper interface {
 	// RouteID derives a stable identifier for the provisioned route from the
 	// request. This ID is used to track and deprovision the route later.
 	RouteID(req core.RouteRequest) string
+
+	// MapBatchProvision combines operations for multiple routes into a single
+	// batch of Nitro operations. certs is keyed by route host.
+	MapBatchProvision(routes []core.RouteRequest, certs map[string]*core.Certificate) ([]NitroOperation, error)
+
+	// MapBatchDeprovision combines deprovision operations for multiple routes.
+	MapBatchDeprovision(routeIDs []string) ([]NitroOperation, error)
+
+	// MapList returns the resource type and name prefix used to discover
+	// existing provisioned routes on the Netscaler.
+	MapList() (resourceType string, namePrefix string)
 }

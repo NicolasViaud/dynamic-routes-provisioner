@@ -200,3 +200,35 @@ func (m *NetscalerMapper) MapDeprovision(routeID string) ([]provnetscaler.NitroO
 		},
 	}, nil
 }
+
+// MapList returns the resource type and name prefix for discovering routes.
+func (m *NetscalerMapper) MapList() (string, string) {
+	return "lbvserver", "sds-"
+}
+
+// MapBatchProvision combines provision operations for multiple routes.
+func (m *NetscalerMapper) MapBatchProvision(routes []core.RouteRequest, certs map[string]*core.Certificate) ([]provnetscaler.NitroOperation, error) {
+	var allOps []provnetscaler.NitroOperation
+	for _, route := range routes {
+		cert := certs[route.Host]
+		ops, err := m.MapProvision(route, cert)
+		if err != nil {
+			return nil, err
+		}
+		allOps = append(allOps, ops...)
+	}
+	return allOps, nil
+}
+
+// MapBatchDeprovision combines deprovision operations for multiple routes.
+func (m *NetscalerMapper) MapBatchDeprovision(routeIDs []string) ([]provnetscaler.NitroOperation, error) {
+	var allOps []provnetscaler.NitroOperation
+	for _, id := range routeIDs {
+		ops, err := m.MapDeprovision(id)
+		if err != nil {
+			return nil, err
+		}
+		allOps = append(allOps, ops...)
+	}
+	return allOps, nil
+}

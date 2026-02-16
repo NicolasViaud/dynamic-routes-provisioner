@@ -16,6 +16,16 @@ type RouteProvisioner interface {
 	// Deprovision removes a route from the target gateway.
 	Deprovision(ctx context.Context, routeID string) error
 
+	// List returns all routes currently provisioned on the gateway.
+	List(ctx context.Context) ([]core.ProvisionedRoute, error)
+
+	// BatchProvision applies multiple routes in a single batch operation.
+	// certs is keyed by route host.
+	BatchProvision(ctx context.Context, routes []core.RouteRequest, certs map[string]*core.Certificate) ([]core.ProvisionedRoute, error)
+
+	// BatchDeprovision removes multiple routes in a single batch operation.
+	BatchDeprovision(ctx context.Context, routeIDs []string) error
+
 	// Name returns the identifier of this provisioner implementation.
 	Name() string
 }

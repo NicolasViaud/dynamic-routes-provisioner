@@ -90,3 +90,32 @@ func (m *WorkspaceMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core
 		},
 	}, nil
 }
+
+// MapDocument converts a full workspace document into a RouteRequest.
+// Used by the desired state provider during reconciliation.
+func (m *WorkspaceMapper) MapDocument(_ context.Context, doc bson.M) (*core.RouteRequest, error) {
+	rawURL, ok := doc["url"].(string)
+	if !ok || rawURL == "" {
+		return nil, nil
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse url %q: %w", rawURL, err)
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return nil, nil
+	}
+
+	id := fmt.Sprintf("%v", doc["_id"])
+
+	return &core.RouteRequest{
+		ID:       id,
+		Host:     host,
+		Path:     "/",
+		TLS:      true,
+		Metadata: map[string]string{"source_url": rawURL},
+	}, nil
+}

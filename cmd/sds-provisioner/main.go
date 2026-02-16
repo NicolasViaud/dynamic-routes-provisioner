@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nicol/dynamic-route-provisioner/core/orchestrator"
+	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
 
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
 	provnetscaler "github.com/nicol/dynamic-route-provisioner/provisioner-netscaler"
@@ -78,14 +80,27 @@ func main() {
 
 	prov := provnetscaler.New(&provisioner.NetscalerMapper{}, netscalerOpts...)
 
+	// --- Reconciler ---
+	desiredState := triggermongo.NewDesiredState(collection, &trigger.WorkspaceMapper{})
+	rec := reconciler.New(desiredState, issuer, prov, logger)
+
+	reconcileInterval, err := time.ParseDuration(cfg.Reconcile.Interval)
+	if err != nil {
+		logger.Error("invalid reconcile interval", "value", cfg.Reconcile.Interval, "error", err)
+		os.Exit(1)
+	}
+
 	// --- Orchestrator ---
-	o := orchestrator.New(trig, issuer, prov, logger)
+	o := orchestrator.New(trig, issuer, prov, logger,
+		orchestrator.WithReconciler(rec, reconcileInterval),
+	)
 
 	logger.Info("sds-provisioner starting",
 		"mongodb", cfg.MongoDB.URI,
 		"database", cfg.MongoDB.Database,
 		"collection", cfg.MongoDB.Collection,
 		"netscaler", cfg.Netscaler.Endpoint,
+		"reconcile_interval", reconcileInterval,
 	)
 
 	if err := o.Run(ctx); err != nil {

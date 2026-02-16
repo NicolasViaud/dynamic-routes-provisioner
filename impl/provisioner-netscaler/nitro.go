@@ -147,3 +147,77 @@ type NitroError struct {
 func (e *NitroError) Error() string {
 	return fmt.Sprintf("nitro %s %s returned %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
 }
+
+// List retrieves all resources of the given type, optionally filtered.
+// filter can be empty or a Nitro filter expression (e.g. "name:sds-*").
+func (c *NitroClient) List(ctx context.Context, resourceType, filter string) ([]map[string]any, error) {
+	url := fmt.Sprintf("%s/nitro/v1/config/%s", c.endpoint, resourceType)
+	if filter != "" {
+		url += "?filter=" + filter
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(c.username, c.password)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("nitro list request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, &NitroError{
+			StatusCode: resp.StatusCode,
+			Method:     http.MethodGet,
+			URL:        url,
+			Body:       string(respBody),
+		}
+	}
+
+	var result map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	raw, ok := result[resourceType]
+	if !ok {
+		return nil, nil
+	}
+
+	var resources []map[string]any
+	if err := json.Unmarshal(raw, &resources); err != nil {
+		return nil, fmt.Errorf("unmarshal resources: %w", err)
+	}
+
+	return resources, nil
+}
+
+// BatchExecute sends multiple operations in a single Nitro batch request.
+func (c *NitroClient) BatchExecute(ctx context.Context, ops []NitroOperation) error {
+	if len(ops) == 0 {
+		return nil
+	}
+
+	var batchBody []map[string]any
+	for _, op := range ops {
+		payload := c.buildPayload(op.Resource)
+		payload["params"] = map[string]string{"action": string(op.Action)}
+		batchBody = append(batchBody, payload)
+	}
+
+	body := map[string]any{
+		"params": map[string]any{
+			"action": "batch",
+		},
+		"batch": batchBody,
+	}
+
+	url := fmt.Sprintf("%s/nitro/v1/config/", c.endpoint)
+	return c.do(ctx, http.MethodPost, url, body)
+}

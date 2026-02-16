@@ -4,45 +4,79 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
 	core "github.com/nicol/dynamic-route-provisioner/core"
 	"github.com/nicol/dynamic-route-provisioner/core/certificate"
 	"github.com/nicol/dynamic-route-provisioner/core/provisioner"
+	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
 	"github.com/nicol/dynamic-route-provisioner/core/trigger"
 )
 
-// Orchestrator coordinates the route provisioning pipeline:
-// Trigger → CertificateIssuer → RouteProvisioner.
+// Orchestrator coordinates the route provisioning pipeline. It runs two
+// concurrent loops:
+//   - Event-driven: reacts to trigger events in real-time
+//   - Reconciliation: periodically compares desired vs actual state and fixes drift
 type Orchestrator struct {
-	trigger     trigger.Trigger
-	issuer      certificate.Issuer
-	provisioner provisioner.RouteProvisioner
-	logger      *slog.Logger
+	trigger           trigger.Trigger
+	issuer            certificate.Issuer
+	provisioner       provisioner.RouteProvisioner
+	reconciler        *reconciler.Reconciler
+	reconcileInterval time.Duration
+	logger            *slog.Logger
+	mu                sync.Mutex // serializes event handling and reconciliation
 }
 
-func New(t trigger.Trigger, i certificate.Issuer, p provisioner.RouteProvisioner, logger *slog.Logger) *Orchestrator {
+// Option configures an Orchestrator.
+type Option func(*Orchestrator)
+
+// WithReconciler enables state reconciliation with the given reconciler and interval.
+// An interval of 0 means reconciliation runs only at startup.
+func WithReconciler(r *reconciler.Reconciler, interval time.Duration) Option {
+	return func(o *Orchestrator) {
+		o.reconciler = r
+		o.reconcileInterval = interval
+	}
+}
+
+func New(t trigger.Trigger, i certificate.Issuer, p provisioner.RouteProvisioner, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Orchestrator{
+	o := &Orchestrator{
 		trigger:     t,
 		issuer:      i,
 		provisioner: p,
 		logger:      logger,
 	}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
 }
 
-// Run starts the orchestrator. It listens for trigger events and processes them
-// through the certificate issuance and route provisioning pipeline.
-// It blocks until the context is cancelled.
+// Run starts the orchestrator. It blocks until the context is cancelled.
 func (o *Orchestrator) Run(ctx context.Context) error {
-	events := make(chan core.RouteEvent)
+	// Run initial reconciliation if configured (no lock needed — nothing else running yet).
+	if o.reconciler != nil {
+		o.logger.Info("running initial reconciliation")
+		if err := o.reconciler.Reconcile(ctx); err != nil {
+			o.logger.Error("initial reconciliation failed", "error", err)
+		}
+	}
 
-	// Start the trigger in a separate goroutine.
-	errCh := make(chan error, 1)
+	// Start the trigger.
+	events := make(chan core.RouteEvent)
+	triggerErrCh := make(chan error, 1)
 	go func() {
-		errCh <- o.trigger.Start(ctx, events)
+		triggerErrCh <- o.trigger.Start(ctx, events)
 	}()
+
+	// Start periodic reconciliation if interval > 0.
+	if o.reconciler != nil && o.reconcileInterval > 0 {
+		go o.reconcileLoop(ctx)
+	}
 
 	o.logger.Info("orchestrator started",
 		"trigger", o.trigger.Name(),
@@ -55,7 +89,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case err := <-errCh:
+		case err := <-triggerErrCh:
 			return fmt.Errorf("trigger %s failed: %w", o.trigger.Name(), err)
 
 		case event := <-events:
@@ -64,7 +98,29 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	}
 }
 
+func (o *Orchestrator) reconcileLoop(ctx context.Context) {
+	ticker := time.NewTicker(o.reconcileInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			o.mu.Lock()
+			o.logger.Info("periodic reconciliation triggered")
+			if err := o.reconciler.Reconcile(ctx); err != nil {
+				o.logger.Error("periodic reconciliation failed", "error", err)
+			}
+			o.mu.Unlock()
+		}
+	}
+}
+
 func (o *Orchestrator) handleEvent(ctx context.Context, event core.RouteEvent) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	log := o.logger.With("host", event.Route.Host, "event", event.Type)
 
 	switch event.Type {
