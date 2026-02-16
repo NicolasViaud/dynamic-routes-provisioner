@@ -17,6 +17,7 @@ import (
 	certacmedns "github.com/nicol/dynamic-route-provisioner/cert-acme-dns"
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
 	certselfsigned "github.com/nicol/dynamic-route-provisioner/cert-selfsigned"
+	certstorekube "github.com/nicol/dynamic-route-provisioner/certstore-kube"
 	corelease "github.com/nicol/dynamic-route-provisioner/core/lease"
 	leasekube "github.com/nicol/dynamic-route-provisioner/lease-kube"
 	leasemongo "github.com/nicol/dynamic-route-provisioner/lease-mongo"
@@ -112,6 +113,41 @@ func main() {
 	}
 	logger.Info("certificate issuer configured", "provider", cfg.Certificate.Provider)
 
+	// --- Kubernetes clientset (shared by certificate store and kube leader election) ---
+	needsKube := (cfg.CertificateStore.Enabled && cfg.CertificateStore.Provider == "kube") || (cfg.LeaderElection.Enabled && cfg.LeaderElection.Provider == "kube")
+	var clientset kubernetes.Interface
+	if needsKube {
+		kubeConfig, err := rest.InClusterConfig()
+		if err != nil {
+			logger.Error("failed to get in-cluster config", "error", err)
+			os.Exit(1)
+		}
+		clientset, err = kubernetes.NewForConfig(kubeConfig)
+		if err != nil {
+			logger.Error("failed to create kubernetes client", "error", err)
+			os.Exit(1)
+		}
+	}
+
+	// --- Certificate store (caching decorator) ---
+	if cfg.CertificateStore.Enabled {
+		renewBefore, err := time.ParseDuration(cfg.CertificateStore.RenewBefore)
+		if err != nil {
+			logger.Error("invalid certificate_store.renew_before", "value", cfg.CertificateStore.RenewBefore, "error", err)
+			os.Exit(1)
+		}
+
+		switch cfg.CertificateStore.Provider {
+		case "kube":
+			issuer = certstorekube.New(issuer, clientset, logger,
+				certstorekube.WithNamespace(cfg.CertificateStore.Namespace),
+				certstorekube.WithSecretPrefix(cfg.CertificateStore.SecretPrefix),
+				certstorekube.WithRenewBefore(renewBefore),
+			)
+		}
+		logger.Info("certificate store enabled", "provider", cfg.CertificateStore.Provider, "namespace", cfg.CertificateStore.Namespace)
+	}
+
 	// --- Netscaler CPX provisioner ---
 	netscalerOpts := []provnetscaler.Option{
 		provnetscaler.WithEndpoint(cfg.Provisioner.Endpoint),
@@ -163,17 +199,6 @@ func main() {
 			renewDeadline, err := time.ParseDuration(cfg.LeaderElection.RenewDeadline)
 			if err != nil {
 				logger.Error("invalid leader_election.renew_deadline", "value", cfg.LeaderElection.RenewDeadline, "error", err)
-				os.Exit(1)
-			}
-
-			kubeConfig, err := rest.InClusterConfig()
-			if err != nil {
-				logger.Error("failed to get in-cluster config", "error", err)
-				os.Exit(1)
-			}
-			clientset, err := kubernetes.NewForConfig(kubeConfig)
-			if err != nil {
-				logger.Error("failed to create kubernetes client", "error", err)
 				os.Exit(1)
 			}
 

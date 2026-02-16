@@ -15,6 +15,13 @@ certificate:
   validity: "8760h"                     # ROUTES_CERTIFICATE_VALIDITY — default 1 year
   organization: "Self-Signed"           # ROUTES_CERTIFICATE_ORGANIZATION
 
+certificate_store:
+  enabled: false                    # ROUTES_CERTIFICATE_STORE_ENABLED — cache certs in K8s Secrets
+  provider: "kube"                  # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube"
+  namespace: "default"              # ROUTES_CERTIFICATE_STORE_NAMESPACE
+  secret_prefix: "route-tls"       # ROUTES_CERTIFICATE_STORE_SECRET_PREFIX
+  renew_before: "720h"             # ROUTES_CERTIFICATE_STORE_RENEW_BEFORE — re-issue 30 days before expiry
+
 provisioner:
   provider: "netscaler"                 # ROUTES_PROVISIONER_PROVIDER
   endpoint: "https://10.0.0.1"         # ROUTES_PROVISIONER_ENDPOINT

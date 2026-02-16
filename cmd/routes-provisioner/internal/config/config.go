@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	Datasource     DatasourceConfig     `mapstructure:"datasource"`
-	Certificate    CertificateConfig    `mapstructure:"certificate"`
-	Provisioner    ProvisionerConfig    `mapstructure:"provisioner"`
-	Reconcile      ReconcileConfig      `mapstructure:"reconcile"`
-	LeaderElection LeaderElectionConfig `mapstructure:"leader_election"`
+	Datasource       DatasourceConfig       `mapstructure:"datasource"`
+	Certificate      CertificateConfig      `mapstructure:"certificate"`
+	CertificateStore CertificateStoreConfig `mapstructure:"certificate_store"`
+	Provisioner      ProvisionerConfig      `mapstructure:"provisioner"`
+	Reconcile        ReconcileConfig        `mapstructure:"reconcile"`
+	LeaderElection   LeaderElectionConfig   `mapstructure:"leader_election"`
 }
 
 type LeaderElectionConfig struct {
@@ -25,6 +26,14 @@ type LeaderElectionConfig struct {
 	RenewDeadline string `mapstructure:"renew_deadline"` // kube only
 	RetryInterval string `mapstructure:"retry_interval"`
 	Identity      string `mapstructure:"identity"`
+}
+
+type CertificateStoreConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	Provider     string `mapstructure:"provider"` // "kube"
+	Namespace    string `mapstructure:"namespace"`
+	SecretPrefix string `mapstructure:"secret_prefix"`
+	RenewBefore  string `mapstructure:"renew_before"`
 }
 
 type ReconcileConfig struct {
@@ -69,6 +78,11 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("certificate.challenge_port", 80)
 	v.SetDefault("certificate.validity", "8760h")
 	v.SetDefault("certificate.organization", "Self-Signed")
+	v.SetDefault("certificate_store.enabled", false)
+	v.SetDefault("certificate_store.provider", "kube")
+	v.SetDefault("certificate_store.namespace", "default")
+	v.SetDefault("certificate_store.secret_prefix", "route-tls")
+	v.SetDefault("certificate_store.renew_before", "720h")
 	v.SetDefault("provisioner.provider", "netscaler")
 	v.SetDefault("reconcile.interval", "5m")
 	v.SetDefault("leader_election.enabled", false)
@@ -125,6 +139,13 @@ func validate(c *Config) error {
 	case "acme-http", "acme-dns", "selfsigned":
 	default:
 		return fmt.Errorf("certificate.provider must be 'acme-http', 'acme-dns', or 'selfsigned' (or set ROUTES_CERTIFICATE_PROVIDER)")
+	}
+	if c.CertificateStore.Enabled {
+		switch c.CertificateStore.Provider {
+		case "kube":
+		default:
+			return fmt.Errorf("certificate_store.provider must be 'kube' (or set ROUTES_CERTIFICATE_STORE_PROVIDER)")
+		}
 	}
 	if c.LeaderElection.Enabled {
 		switch c.LeaderElection.Provider {

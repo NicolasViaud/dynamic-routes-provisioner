@@ -2,6 +2,36 @@
 
 A pluggable Go framework for automating TLS route provisioning on gateway and proxy appliances. Designed to run inside Kubernetes.
 
+## Why Dynamic Route Provisioner?
+
+The traditional Kubernetes approach — cert-manager + HTTPRoute CRDs + an ingress controller — routes every change through the Kubernetes API server and etcd:
+
+```
+App DB change → create HTTPRoute CR  → etcd write → controller watch
+             → create Certificate CR → etcd write → cert-manager watch → issue cert → write Secret → etcd write
+             → ingress controller watches Secret + HTTPRoute → configure gateway
+```
+
+For **N routes**, this creates at least **3N Kubernetes objects** (HTTPRoute + Certificate + Secret), each written to etcd and watched by multiple controllers. Two independent reconciliation loops (cert-manager and the ingress controller) coordinate implicitly by waiting on each other's resources.
+
+Dynamic Route Provisioner replaces this with a **single direct pipeline**:
+
+```
+MongoDB change stream → Orchestrator → issue cert → provision gateway
+```
+
+### No etcd bottleneck
+
+etcd has hard throughput limits. Every route in the traditional stack generates multiple etcd writes and watch notifications fanning out to controllers. This project bypasses the Kubernetes API server entirely — the source of truth is your application database (e.g. MongoDB), which you already scale independently. Leader election uses MongoDB TTL documents or Kubernetes Lease API directly, with no etcd coordination overhead.
+
+### No API server pressure
+
+The traditional stack puts constant load on the Kubernetes API server: cert-manager and the ingress controller each maintain long-lived watches, list resources on resync, and write back status updates. At scale, this competes with every other controller and operator in the cluster for API server capacity. Dynamic Route Provisioner talks directly to MongoDB and the gateway API — the Kubernetes API server is not in the hot path at all, freeing up cluster resources for workloads that actually need them.
+
+### Single pipeline, no controller coordination
+
+cert-manager and the ingress controller are two separate reconciliation loops. The ingress controller must wait for cert-manager to write a Secret before it can act — added latency on every route. Here, certificate issuance and gateway provisioning happen sequentially in one process: change stream event → cert issued → route provisioned. No intermediate CRs, no watch propagation delay, no polling for another controller's output. Drift correction uses `BatchProvision` / `BatchDeprovision` to fix multiple routes in a single gateway API call, instead of per-resource reconciliation.
+
 ## How it works
 
 ```

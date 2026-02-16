@@ -6,6 +6,7 @@ use (
 	./impl/cert-acme-dns
 	./impl/cert-acme-http
 	./impl/cert-selfsigned
+	./impl/certstore-kube
 	./impl/lease-kube
 	./impl/lease-mongo
 	./impl/provisioner-netscaler
