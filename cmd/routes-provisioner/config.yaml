@@ -2,25 +2,36 @@ datasource:
   provider: "mongodb"                   # ROUTES_DATASOURCE_PROVIDER
   uri: "mongodb://localhost:27017"      # ROUTES_DATASOURCE_URI
   database: "mydb"                      # ROUTES_DATASOURCE_DATABASE
-  collection: "workspace"              # ROUTES_DATASOURCE_COLLECTION
+  collection: "routes"              # ROUTES_DATASOURCE_COLLECTION
 
 certificate:
-  provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", or "selfsigned"
+  provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"
   # --- acme-http / acme-dns common settings ---
-  email: "admin@example.com"            # ROUTES_CERTIFICATE_EMAIL
-  directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory"  # ROUTES_CERTIFICATE_DIRECTORY_URL
+  # email: "admin@example.com"            # ROUTES_CERTIFICATE_EMAIL
+  # directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory"  # ROUTES_CERTIFICATE_DIRECTORY_URL
   # --- acme-http only ---
-  challenge_port: 80                    # ROUTES_CERTIFICATE_CHALLENGE_PORT
+  # challenge_port: 80                    # ROUTES_CERTIFICATE_CHALLENGE_PORT
   # --- selfsigned only ---
   validity: "8760h"                     # ROUTES_CERTIFICATE_VALIDITY — default 1 year
   organization: "Self-Signed"           # ROUTES_CERTIFICATE_ORGANIZATION
+  # --- vault only ---
+  # vault_address: "http://127.0.0.1:8200"  # ROUTES_CERTIFICATE_VAULT_ADDRESS — or VAULT_ADDR env
+  # vault_token: ""                          # ROUTES_CERTIFICATE_VAULT_TOKEN — or VAULT_TOKEN env
+  # vault_mount: "pki"                       # ROUTES_CERTIFICATE_VAULT_MOUNT — PKI engine mount
+  # vault_role: "my-role"                    # ROUTES_CERTIFICATE_VAULT_ROLE — PKI role name
+  # vault_ttl: "720h"                        # ROUTES_CERTIFICATE_VAULT_TTL — requested cert TTL
 
 certificate_store:
   enabled: false                    # ROUTES_CERTIFICATE_STORE_ENABLED — cache certs in K8s Secrets
-  provider: "kube"                  # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube"
+  provider: "kube"                  # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube" or "vault"
   namespace: "default"              # ROUTES_CERTIFICATE_STORE_NAMESPACE
   secret_prefix: "route-tls"       # ROUTES_CERTIFICATE_STORE_SECRET_PREFIX
   renew_before: "720h"             # ROUTES_CERTIFICATE_STORE_RENEW_BEFORE — re-issue 30 days before expiry
+  # --- vault only ---
+  # vault_address: "http://127.0.0.1:8200"  # ROUTES_CERTIFICATE_STORE_VAULT_ADDRESS — or VAULT_ADDR env
+  # vault_token: ""                          # ROUTES_CERTIFICATE_STORE_VAULT_TOKEN — or VAULT_TOKEN env
+  # vault_mount: "secret"                    # ROUTES_CERTIFICATE_STORE_VAULT_MOUNT — KV v2 engine mount
+  # vault_prefix: "route-tls"               # ROUTES_CERTIFICATE_STORE_VAULT_PREFIX — path prefix in KV
 
 provisioner:
   provider: "netscaler"                 # ROUTES_PROVISIONER_PROVIDER

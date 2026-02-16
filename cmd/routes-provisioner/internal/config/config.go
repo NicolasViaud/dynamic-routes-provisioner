@@ -21,7 +21,7 @@ type LeaderElectionConfig struct {
 	Enabled       bool   `mapstructure:"enabled"`
 	Provider      string `mapstructure:"provider"` // "kube" or "mongo"
 	LeaseName     string `mapstructure:"lease_name"`
-	Namespace     string `mapstructure:"namespace"`     // kube only
+	Namespace     string `mapstructure:"namespace"` // kube only
 	LeaseDuration string `mapstructure:"lease_duration"`
 	RenewDeadline string `mapstructure:"renew_deadline"` // kube only
 	RetryInterval string `mapstructure:"retry_interval"`
@@ -30,10 +30,14 @@ type LeaderElectionConfig struct {
 
 type CertificateStoreConfig struct {
 	Enabled      bool   `mapstructure:"enabled"`
-	Provider     string `mapstructure:"provider"` // "kube"
-	Namespace    string `mapstructure:"namespace"`
-	SecretPrefix string `mapstructure:"secret_prefix"`
+	Provider     string `mapstructure:"provider"`      // "kube" or "vault"
+	Namespace    string `mapstructure:"namespace"`     // kube only
+	SecretPrefix string `mapstructure:"secret_prefix"` // kube only
 	RenewBefore  string `mapstructure:"renew_before"`
+	VaultAddress string `mapstructure:"vault_address"` // vault only
+	VaultToken   string `mapstructure:"vault_token"`   // vault only
+	VaultMount   string `mapstructure:"vault_mount"`   // vault only
+	VaultPrefix  string `mapstructure:"vault_prefix"`  // vault only
 }
 
 type ReconcileConfig struct {
@@ -48,12 +52,17 @@ type DatasourceConfig struct {
 }
 
 type CertificateConfig struct {
-	Provider      string `mapstructure:"provider"` // "acme-http", "acme-dns", or "selfsigned"
+	Provider      string `mapstructure:"provider"`       // "acme-http", "acme-dns", "selfsigned", or "vault"
 	Email         string `mapstructure:"email"`          // acme-http/acme-dns
 	DirectoryURL  string `mapstructure:"directory_url"`  // acme-http/acme-dns
 	ChallengePort int    `mapstructure:"challenge_port"` // acme-http only
-	Validity      string `mapstructure:"validity"`     // selfsigned only
-	Organization  string `mapstructure:"organization"` // selfsigned only
+	Validity      string `mapstructure:"validity"`       // selfsigned only
+	Organization  string `mapstructure:"organization"`   // selfsigned only
+	VaultAddress  string `mapstructure:"vault_address"`  // vault only
+	VaultToken    string `mapstructure:"vault_token"`    // vault only
+	VaultMount    string `mapstructure:"vault_mount"`    // vault only
+	VaultRole     string `mapstructure:"vault_role"`     // vault only
+	VaultTTL      string `mapstructure:"vault_ttl"`      // vault only
 }
 
 type ProvisionerConfig struct {
@@ -72,17 +81,21 @@ func Load(path string) (*Config, error) {
 
 	// Defaults.
 	v.SetDefault("datasource.provider", "mongodb")
-	v.SetDefault("datasource.collection", "workspace")
+	v.SetDefault("datasource.collection", "routes")
 	v.SetDefault("certificate.provider", "acme-http")
 	v.SetDefault("certificate.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
 	v.SetDefault("certificate.challenge_port", 80)
 	v.SetDefault("certificate.validity", "8760h")
 	v.SetDefault("certificate.organization", "Self-Signed")
+	v.SetDefault("certificate.vault_mount", "pki")
+	v.SetDefault("certificate.vault_ttl", "720h")
 	v.SetDefault("certificate_store.enabled", false)
 	v.SetDefault("certificate_store.provider", "kube")
 	v.SetDefault("certificate_store.namespace", "default")
 	v.SetDefault("certificate_store.secret_prefix", "route-tls")
 	v.SetDefault("certificate_store.renew_before", "720h")
+	v.SetDefault("certificate_store.vault_mount", "secret")
+	v.SetDefault("certificate_store.vault_prefix", "route-tls")
 	v.SetDefault("provisioner.provider", "netscaler")
 	v.SetDefault("reconcile.interval", "5m")
 	v.SetDefault("leader_election.enabled", false)
@@ -136,15 +149,15 @@ func validate(c *Config) error {
 		return fmt.Errorf("provisioner.endpoint is required (or set ROUTES_PROVISIONER_ENDPOINT)")
 	}
 	switch c.Certificate.Provider {
-	case "acme-http", "acme-dns", "selfsigned":
+	case "acme-http", "acme-dns", "selfsigned", "vault":
 	default:
-		return fmt.Errorf("certificate.provider must be 'acme-http', 'acme-dns', or 'selfsigned' (or set ROUTES_CERTIFICATE_PROVIDER)")
+		return fmt.Errorf("certificate.provider must be 'acme-http', 'acme-dns', 'selfsigned', or 'vault' (or set ROUTES_CERTIFICATE_PROVIDER)")
 	}
 	if c.CertificateStore.Enabled {
 		switch c.CertificateStore.Provider {
-		case "kube":
+		case "kube", "vault":
 		default:
-			return fmt.Errorf("certificate_store.provider must be 'kube' (or set ROUTES_CERTIFICATE_STORE_PROVIDER)")
+			return fmt.Errorf("certificate_store.provider must be 'kube' or 'vault' (or set ROUTES_CERTIFICATE_STORE_PROVIDER)")
 		}
 	}
 	if c.LeaderElection.Enabled {

@@ -17,7 +17,9 @@ import (
 	certacmedns "github.com/nicol/dynamic-route-provisioner/cert-acme-dns"
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
 	certselfsigned "github.com/nicol/dynamic-route-provisioner/cert-selfsigned"
+	certvault "github.com/nicol/dynamic-route-provisioner/cert-vault"
 	certstorekube "github.com/nicol/dynamic-route-provisioner/certstore-kube"
+	certstorevault "github.com/nicol/dynamic-route-provisioner/certstore-vault"
 	corelease "github.com/nicol/dynamic-route-provisioner/core/lease"
 	leasekube "github.com/nicol/dynamic-route-provisioner/lease-kube"
 	leasemongo "github.com/nicol/dynamic-route-provisioner/lease-mongo"
@@ -110,6 +112,28 @@ func main() {
 			ssOpts = append(ssOpts, certselfsigned.WithOrganization(cfg.Certificate.Organization))
 		}
 		issuer = certselfsigned.New(ssOpts...)
+	case "vault":
+		vaultOpts := []certvault.Option{
+			certvault.WithRole(cfg.Certificate.VaultRole),
+		}
+		if cfg.Certificate.VaultAddress != "" {
+			vaultOpts = append(vaultOpts, certvault.WithAddress(cfg.Certificate.VaultAddress))
+		}
+		if cfg.Certificate.VaultToken != "" {
+			vaultOpts = append(vaultOpts, certvault.WithToken(cfg.Certificate.VaultToken))
+		}
+		if cfg.Certificate.VaultMount != "" {
+			vaultOpts = append(vaultOpts, certvault.WithMount(cfg.Certificate.VaultMount))
+		}
+		if cfg.Certificate.VaultTTL != "" {
+			vaultOpts = append(vaultOpts, certvault.WithTTL(cfg.Certificate.VaultTTL))
+		}
+		var err error
+		issuer, err = certvault.New(vaultOpts...)
+		if err != nil {
+			logger.Error("failed to create vault issuer", "error", err)
+			os.Exit(1)
+		}
 	}
 	logger.Info("certificate issuer configured", "provider", cfg.Certificate.Provider)
 
@@ -144,8 +168,30 @@ func main() {
 				certstorekube.WithSecretPrefix(cfg.CertificateStore.SecretPrefix),
 				certstorekube.WithRenewBefore(renewBefore),
 			)
+		case "vault":
+			storeOpts := []certstorevault.Option{
+				certstorevault.WithRenewBefore(renewBefore),
+			}
+			if cfg.CertificateStore.VaultAddress != "" {
+				storeOpts = append(storeOpts, certstorevault.WithAddress(cfg.CertificateStore.VaultAddress))
+			}
+			if cfg.CertificateStore.VaultToken != "" {
+				storeOpts = append(storeOpts, certstorevault.WithToken(cfg.CertificateStore.VaultToken))
+			}
+			if cfg.CertificateStore.VaultMount != "" {
+				storeOpts = append(storeOpts, certstorevault.WithMount(cfg.CertificateStore.VaultMount))
+			}
+			if cfg.CertificateStore.VaultPrefix != "" {
+				storeOpts = append(storeOpts, certstorevault.WithPrefix(cfg.CertificateStore.VaultPrefix))
+			}
+			var err error
+			issuer, err = certstorevault.New(issuer, logger, storeOpts...)
+			if err != nil {
+				logger.Error("failed to create vault certificate store", "error", err)
+				os.Exit(1)
+			}
 		}
-		logger.Info("certificate store enabled", "provider", cfg.CertificateStore.Provider, "namespace", cfg.CertificateStore.Namespace)
+		logger.Info("certificate store enabled", "provider", cfg.CertificateStore.Provider)
 	}
 
 	// --- Netscaler CPX provisioner ---

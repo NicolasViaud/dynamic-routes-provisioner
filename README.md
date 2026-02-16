@@ -32,21 +32,26 @@ The traditional stack puts constant load on the Kubernetes API server: cert-mana
 
 cert-manager and the ingress controller are two separate reconciliation loops. The ingress controller must wait for cert-manager to write a Secret before it can act — added latency on every route. Here, certificate issuance and gateway provisioning happen sequentially in one process: change stream event → cert issued → route provisioned. No intermediate CRs, no watch propagation delay, no polling for another controller's output. Drift correction uses `BatchProvision` / `BatchDeprovision` to fix multiple routes in a single gateway API call, instead of per-resource reconciliation.
 
+### Pluggable certificate storage
+
+cert-manager is hardwired to Kubernetes Secrets — private keys and certificates always land in etcd, and you're limited to whatever encryption-at-rest Kubernetes provides. Dynamic Route Provisioner treats certificate storage as a pluggable concern. The certificate store is a decorator that wraps any issuer and can cache certificates in Kubernetes Secrets, HashiCorp Vault KV v2, or any other backend you implement. This means you can store private keys in a proper secrets manager with audit logging, access policies, and automatic rotation — without changing a single line of issuer or provisioner code.
+
 ## How it works
 
 ```
-Trigger → Certificate Issuer → Route Provisioner
-              ↑                        ↑
-        Reconciler (periodic diff + batch apply)
-              ↑
-    Leader Election (HA — only one instance active)
+Trigger → Certificate Store (cache) → Certificate Issuer → Route Provisioner
+                   ↑                          ↑                     ↑
+             Reconciler (periodic diff + batch apply)
+                   ↑
+         Leader Election (HA — only one instance active)
 ```
 
 1. **Trigger** detects a new route is needed (e.g. a document appears in MongoDB)
-2. **Certificate Issuer** obtains a TLS certificate for the hostname (e.g. ACME HTTP-01)
-3. **Route Provisioner** creates the route on the target gateway (e.g. Netscaler CPX via Nitro API)
-4. **Reconciler** periodically compares desired state (source of truth) vs actual state (gateway), computes the diff, and batch-applies it — handles drift and gateway restarts
-5. **Leader Election** ensures only one instance processes events and reconciliation at a time (HA with automatic failover)
+2. **Certificate Store** checks for a cached, still-valid certificate (K8s Secrets or Vault KV v2) — avoids unnecessary reissuance after gateway restarts or ACME rate limits
+3. **Certificate Issuer** obtains a TLS certificate for the hostname if not cached (e.g. ACME HTTP-01, Vault PKI)
+4. **Route Provisioner** creates the route on the target gateway (e.g. Netscaler CPX via Nitro API)
+5. **Reconciler** periodically compares desired state (source of truth) vs actual state (gateway), computes the diff, and batch-applies it — handles drift and gateway restarts
+6. **Leader Election** ensures only one instance processes events and reconciliation at a time (HA with automatic failover)
 
 The **Orchestrator** wires these components, runs the event loop, and manages the reconciliation and leader election lifecycles.
 
@@ -71,6 +76,9 @@ dynamic-route-provisioner/
 │   ├── cert-acme-dns/                 # ACME DNS-01 certificate issuer
 │   ├── cert-acme-http/                # ACME HTTP-01 certificate issuer
 │   ├── cert-selfsigned/               # Self-signed certificate issuer (testing)
+│   ├── cert-vault/                    # HashiCorp Vault PKI certificate issuer
+│   ├── certstore-kube/                # Certificate store — Kubernetes TLS Secrets
+│   ├── certstore-vault/               # Certificate store — Vault KV v2
 │   ├── provisioner-netscaler/         # Netscaler CPX (Nitro API) provisioner
 │   ├── lease-mongo/                   # MongoDB-based leader election
 │   └── lease-kube/                    # Kubernetes Lease API leader election
@@ -124,13 +132,16 @@ type LeaderElector interface {
 | `cert-acme-dns` | `Issuer` | `DNSProvider` | ACME DNS-01 challenges (supports wildcards) |
 | `cert-acme-http` | `Issuer` | `ChallengeSolver` | ACME HTTP-01 challenges |
 | `cert-selfsigned` | `Issuer` | — | Self-signed certificates for testing/development |
+| `cert-vault` | `Issuer` | — | HashiCorp Vault PKI secrets engine (role-based issuance) |
+| `certstore-kube` | `Issuer` (decorator) | — | Caches certificates as Kubernetes TLS Secrets |
+| `certstore-vault` | `Issuer` (decorator) | — | Caches certificates in Vault KV v2 |
 | `provisioner-netscaler` | `RouteProvisioner` | `ResourceMapper` | Netscaler CPX via Nitro REST API (incl. batch and list) |
 | `lease-mongo` | `LeaderElector` | — | MongoDB document-based leader election with TTL |
 | `lease-kube` | `LeaderElector` | — | Kubernetes coordination/v1 Lease API |
 
 ## Routes Provisioner (use-case app)
 
-Watches a MongoDB `workspace` collection for documents with a `url` field, issues ACME certificates, and configures a Netscaler CPX gateway. Supports state reconciliation and leader election for HA deployments.
+Watches a MongoDB collection for documents with a `url` field, issues ACME certificates, and configures a Netscaler CPX gateway. Supports state reconciliation and leader election for HA deployments.
 
 ### Configuration
 
@@ -141,15 +152,24 @@ datasource:
   provider: "mongodb"                    # ROUTES_DATASOURCE_PROVIDER
   uri: "mongodb://localhost:27017"       # ROUTES_DATASOURCE_URI
   database: "mydb"                       # ROUTES_DATASOURCE_DATABASE
-  collection: "workspace"               # ROUTES_DATASOURCE_COLLECTION
+  collection: "routes"               # ROUTES_DATASOURCE_COLLECTION
 
 certificate:
-  provider: "selfsigned"                 # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", or "selfsigned"
+  provider: "selfsigned"                 # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"
   email: "admin@example.com"             # ROUTES_CERTIFICATE_EMAIL (acme-http/acme-dns)
   directory_url: "https://acme-..."      # ROUTES_CERTIFICATE_DIRECTORY_URL (acme-http/acme-dns)
   challenge_port: 80                     # ROUTES_CERTIFICATE_CHALLENGE_PORT (acme-http only)
   validity: "8760h"                      # ROUTES_CERTIFICATE_VALIDITY (selfsigned only)
   organization: "Self-Signed"            # ROUTES_CERTIFICATE_ORGANIZATION (selfsigned only)
+  # vault_address: "http://vault:8200"   # ROUTES_CERTIFICATE_VAULT_ADDRESS (vault only)
+  # vault_role: "my-role"                # ROUTES_CERTIFICATE_VAULT_ROLE (vault only)
+
+certificate_store:
+  enabled: false                         # ROUTES_CERTIFICATE_STORE_ENABLED
+  provider: "kube"                       # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube" or "vault"
+  namespace: "default"                   # ROUTES_CERTIFICATE_STORE_NAMESPACE (kube only)
+  secret_prefix: "route-tls"            # ROUTES_CERTIFICATE_STORE_SECRET_PREFIX (kube only)
+  renew_before: "720h"                   # ROUTES_CERTIFICATE_STORE_RENEW_BEFORE — re-issue 30 days before expiry
 
 provisioner:
   provider: "netscaler"                  # ROUTES_PROVISIONER_PROVIDER

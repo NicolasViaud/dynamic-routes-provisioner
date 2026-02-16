@@ -22,6 +22,9 @@ impl/                              # Implementation modules (each its own Go mod
   cert-acme-dns/                   # ACME DNS-01 issuer (ext: DNSProvider)
   cert-acme-http/                  # ACME HTTP-01 issuer (ext: ChallengeSolver)
   cert-selfsigned/                 # Self-signed certificate issuer (testing)
+  cert-vault/                      # HashiCorp Vault PKI issuer (role-based)
+  certstore-kube/                  # Certificate store — K8s TLS Secrets (caching decorator)
+  certstore-vault/                 # Certificate store — Vault KV v2 (caching decorator)
   provisioner-netscaler/           # Netscaler CPX via Nitro API (ext: ResourceMapper)
   lease-mongo/                     # MongoDB-based leader election
   lease-kube/                      # Kubernetes Lease API leader election (coordination/v1)
@@ -29,7 +32,7 @@ cmd/
   routes-provisioner/                 # Concrete use-case app (standard Go layout)
     main.go                        # Entrypoint
     internal/config/               # Viper-based config (YAML + ROUTES_* env overrides)
-    internal/trigger/              # WorkspaceMapper (MongoDB workspace collection)
+    internal/source/              # MongoMapper (MongoDB routes collection)
     internal/certificate/          # ChallengeServer (HTTP-01 solver)
     internal/provisioner/          # NetscalerMapper (Nitro API resource mapping)
     config.yaml                    # Example config
@@ -57,7 +60,8 @@ No tests yet. When adding: `go test ./...` from the module directory.
 - `go.work` for local module resolution (not published remotely yet)
 - `cmd/` apps use standard Go layout (`internal/`) with Viper for config
 - Env var override convention: `ROUTES_` prefix, `_` as delimiter (e.g. `ROUTES_DATASOURCE_URI`)
-- Config uses provider pattern: `datasource.provider`, `certificate.provider`, `provisioner.provider`
+- Config uses provider pattern: `datasource.provider`, `certificate.provider`, `certificate_store.provider`, `provisioner.provider`
+- Certificate store uses decorator pattern: wraps any `certificate.Issuer`, caches in persistent storage, transparent to reconciler/orchestrator
 - `sync.Mutex` in orchestrator serializes event handling and reconciliation
 
 ## Adding a new impl module
