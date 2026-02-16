@@ -37,8 +37,9 @@ dynamic-route-provisioner/
 │   ├── lease/                         # lease.LeaderElector
 │   └── orchestrator/                  # Orchestrator (pipeline coordinator)
 ├── impl/
-│   ├── trigger-mongo/                 # MongoDB change stream trigger
+│   ├── source-mongo/                  # MongoDB change stream trigger + desired state
 │   ├── cert-acme-http/                # ACME HTTP-01 certificate issuer
+│   ├── cert-selfsigned/               # Self-signed certificate issuer (testing)
 │   ├── provisioner-netscaler/         # Netscaler CPX (Nitro API) provisioner
 │   ├── lease-mongo/                   # MongoDB-based leader election
 │   └── lease-kube/                    # Kubernetes Lease API leader election
@@ -88,8 +89,9 @@ type LeaderElector interface {
 
 | Module | Interface | Extension point | Description |
 |---|---|---|---|
-| `trigger-mongo` | `Trigger` + `DesiredStateProvider` | `DocumentMapper` | MongoDB change streams + full collection listing for reconciliation |
+| `source-mongo` | `Trigger` + `DesiredStateProvider` | `DocumentMapper` | MongoDB change streams + full collection listing for reconciliation |
 | `cert-acme-http` | `Issuer` | `ChallengeSolver` | ACME HTTP-01 challenges |
+| `cert-selfsigned` | `Issuer` | — | Self-signed certificates for testing/development |
 | `provisioner-netscaler` | `RouteProvisioner` | `ResourceMapper` | Netscaler CPX via Nitro REST API (incl. batch and list) |
 | `lease-mongo` | `LeaderElector` | — | MongoDB document-based leader election with TTL |
 | `lease-kube` | `LeaderElector` | — | Kubernetes coordination/v1 Lease API |
@@ -103,31 +105,37 @@ Watches a MongoDB `workspace` collection for documents with a `url` field, issue
 YAML base config with environment variable overrides (via [Viper](https://github.com/spf13/viper)). Env vars use the `SDS_` prefix:
 
 ```yaml
-mongodb:
-  uri: "mongodb://localhost:27017"       # SDS_MONGODB_URI
-  database: "mydb"                       # SDS_MONGODB_DATABASE
-  collection: "workspace"                # SDS_MONGODB_COLLECTION
+datasource:
+  provider: "mongodb"                    # SDS_DATASOURCE_PROVIDER
+  uri: "mongodb://localhost:27017"       # SDS_DATASOURCE_URI
+  database: "mydb"                       # SDS_DATASOURCE_DATABASE
+  collection: "workspace"               # SDS_DATASOURCE_COLLECTION
 
-acme:
-  email: "admin@example.com"             # SDS_ACME_EMAIL
-  directory_url: "https://acme-..."      # SDS_ACME_DIRECTORY_URL
-  challenge_port: 80                     # SDS_ACME_CHALLENGE_PORT
+certificate:
+  provider: "selfsigned"                 # SDS_CERTIFICATE_PROVIDER — "acme" or "selfsigned"
+  email: "admin@example.com"             # SDS_CERTIFICATE_EMAIL (acme only)
+  directory_url: "https://acme-..."      # SDS_CERTIFICATE_DIRECTORY_URL (acme only)
+  challenge_port: 80                     # SDS_CERTIFICATE_CHALLENGE_PORT (acme only)
+  validity: "8760h"                      # SDS_CERTIFICATE_VALIDITY (selfsigned only)
+  organization: "Self-Signed"            # SDS_CERTIFICATE_ORGANIZATION (selfsigned only)
 
-netscaler:
-  endpoint: "https://10.0.0.1"           # SDS_NETSCALER_ENDPOINT
-  username: "nsroot"                     # SDS_NETSCALER_USERNAME
-  password: "secret"                     # SDS_NETSCALER_PASSWORD
-  insecure_skip_verify: true             # SDS_NETSCALER_INSECURE_SKIP_VERIFY
+provisioner:
+  provider: "netscaler"                  # SDS_PROVISIONER_PROVIDER
+  endpoint: "https://10.0.0.1"           # SDS_PROVISIONER_ENDPOINT
+  username: "nsroot"                     # SDS_PROVISIONER_USERNAME
+  password: "secret"                     # SDS_PROVISIONER_PASSWORD
+  insecure_skip_verify: true             # SDS_PROVISIONER_INSECURE_SKIP_VERIFY
 
 reconcile:
   interval: "5m"                         # SDS_RECONCILE_INTERVAL
 
 leader_election:
   enabled: false                         # SDS_LEADER_ELECTION_ENABLED
+  provider: "kube"                       # SDS_LEADER_ELECTION_PROVIDER — "kube" or "mongo"
   lease_name: "sds-provisioner-leader"   # SDS_LEADER_ELECTION_LEASE_NAME
-  namespace: "default"                   # SDS_LEADER_ELECTION_NAMESPACE
+  namespace: "default"                   # SDS_LEADER_ELECTION_NAMESPACE (kube only)
   lease_duration: "15s"                  # SDS_LEADER_ELECTION_LEASE_DURATION
-  renew_deadline: "10s"                  # SDS_LEADER_ELECTION_RENEW_DEADLINE
+  renew_deadline: "10s"                  # SDS_LEADER_ELECTION_RENEW_DEADLINE (kube only)
   retry_interval: "2s"                   # SDS_LEADER_ELECTION_RETRY_INTERVAL
 ```
 

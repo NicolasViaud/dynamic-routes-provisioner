@@ -18,8 +18,9 @@ core/                              # Interfaces + domain model (no external deps
   lease/                           # LeaderElector interface
   orchestrator/                    # Orchestrator — wires everything, supports leader election
 impl/                              # Implementation modules (each its own Go module)
-  trigger-mongo/                   # MongoDB change stream trigger (ext: DocumentMapper)
+  source-mongo/                    # MongoDB change stream trigger + desired state (ext: DocumentMapper)
   cert-acme-http/                  # ACME HTTP-01 issuer (ext: ChallengeSolver)
+  cert-selfsigned/                 # Self-signed certificate issuer (testing)
   provisioner-netscaler/           # Netscaler CPX via Nitro API (ext: ResourceMapper)
   lease-mongo/                     # MongoDB-based leader election
   lease-kube/                      # Kubernetes Lease API leader election (coordination/v1)
@@ -38,7 +39,7 @@ cmd/
 ```bash
 # Build a specific module
 cd cmd/sds-provisioner && go build ./...
-cd impl/trigger-mongo && go build ./...
+cd impl/source-mongo && go build ./...
 
 # Sync workspace after adding modules
 go work sync
@@ -54,7 +55,8 @@ No tests yet. When adding: `go test ./...` from the module directory.
 - `context.Context` on all blocking/IO methods, `log/slog` for logging
 - `go.work` for local module resolution (not published remotely yet)
 - `cmd/` apps use standard Go layout (`internal/`) with Viper for config
-- Env var override convention: `SDS_` prefix, `_` as delimiter (e.g. `SDS_MONGODB_URI`)
+- Env var override convention: `SDS_` prefix, `_` as delimiter (e.g. `SDS_DATASOURCE_URI`)
+- Config uses provider pattern: `datasource.provider`, `certificate.provider`, `provisioner.provider`
 - `sync.Mutex` in orchestrator serializes event handling and reconciliation
 
 ## Adding a new impl module

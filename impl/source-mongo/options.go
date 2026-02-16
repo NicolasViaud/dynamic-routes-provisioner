@@ -1,4 +1,4 @@
-package triggermongo
+package sourcemongo
 
 import (
 	"go.mongodb.org/mongo-driver/v2/bson"

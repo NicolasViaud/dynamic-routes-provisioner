@@ -1,4 +1,4 @@
-package triggermongo
+package sourcemongo
 
 import (
 	"context"

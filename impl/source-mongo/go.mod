@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/trigger-mongo
+module github.com/nicol/dynamic-route-provisioner/source-mongo
 
 go 1.25.4
 

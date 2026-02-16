@@ -12,10 +12,15 @@ import (
 	"github.com/nicol/dynamic-route-provisioner/core/orchestrator"
 	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
 
+	corecert "github.com/nicol/dynamic-route-provisioner/core/certificate"
+
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
+	certselfsigned "github.com/nicol/dynamic-route-provisioner/cert-selfsigned"
+	corelease "github.com/nicol/dynamic-route-provisioner/core/lease"
 	leasekube "github.com/nicol/dynamic-route-provisioner/lease-kube"
+	leasemongo "github.com/nicol/dynamic-route-provisioner/lease-mongo"
 	provnetscaler "github.com/nicol/dynamic-route-provisioner/provisioner-netscaler"
-	triggermongo "github.com/nicol/dynamic-route-provisioner/trigger-mongo"
+	sourcemongo "github.com/nicol/dynamic-route-provisioner/source-mongo"
 
 	"github.com/nicol/dynamic-route-provisioner/sds-provisioner/internal/certificate"
 	"github.com/nicol/dynamic-route-provisioner/sds-provisioner/internal/config"
@@ -46,45 +51,63 @@ func main() {
 	defer stop()
 
 	// --- MongoDB trigger ---
-	mongoClient, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoDB.URI))
+	mongoClient, err := mongo.Connect(options.Client().ApplyURI(cfg.Datasource.URI))
 	if err != nil {
 		logger.Error("failed to connect to mongodb", "error", err)
 		os.Exit(1)
 	}
 	defer mongoClient.Disconnect(ctx)
 
-	collection := mongoClient.Database(cfg.MongoDB.Database).Collection(cfg.MongoDB.Collection)
-	trig := triggermongo.New(collection, &trigger.WorkspaceMapper{})
+	collection := mongoClient.Database(cfg.Datasource.Database).Collection(cfg.Datasource.Collection)
+	trig := sourcemongo.New(collection, &trigger.WorkspaceMapper{})
 
-	// --- ACME HTTP-01 certificate issuer ---
-	challengeServer := certificate.NewChallengeServer(cfg.ACME.ChallengePort)
-
-	acmeOpts := []certacmehttp.Option{
-		certacmehttp.WithEmail(cfg.ACME.Email),
+	// --- Certificate issuer ---
+	var issuer corecert.Issuer
+	switch cfg.Certificate.Provider {
+	case "acme":
+		challengeServer := certificate.NewChallengeServer(cfg.Certificate.ChallengePort)
+		acmeOpts := []certacmehttp.Option{
+			certacmehttp.WithEmail(cfg.Certificate.Email),
+		}
+		if cfg.Certificate.DirectoryURL != "" {
+			acmeOpts = append(acmeOpts, certacmehttp.WithDirectoryURL(cfg.Certificate.DirectoryURL))
+		}
+		var err error
+		issuer, err = certacmehttp.New(challengeServer, acmeOpts...)
+		if err != nil {
+			logger.Error("failed to create acme issuer", "error", err)
+			os.Exit(1)
+		}
+	case "selfsigned":
+		var ssOpts []certselfsigned.Option
+		if cfg.Certificate.Validity != "" {
+			validity, err := time.ParseDuration(cfg.Certificate.Validity)
+			if err != nil {
+				logger.Error("invalid certificate.validity", "value", cfg.Certificate.Validity, "error", err)
+				os.Exit(1)
+			}
+			ssOpts = append(ssOpts, certselfsigned.WithValidity(validity))
+		}
+		if cfg.Certificate.Organization != "" {
+			ssOpts = append(ssOpts, certselfsigned.WithOrganization(cfg.Certificate.Organization))
+		}
+		issuer = certselfsigned.New(ssOpts...)
 	}
-	if cfg.ACME.DirectoryURL != "" {
-		acmeOpts = append(acmeOpts, certacmehttp.WithDirectoryURL(cfg.ACME.DirectoryURL))
-	}
-
-	issuer, err := certacmehttp.New(challengeServer, acmeOpts...)
-	if err != nil {
-		logger.Error("failed to create acme issuer", "error", err)
-		os.Exit(1)
-	}
+	logger.Info("certificate issuer configured", "provider", cfg.Certificate.Provider)
 
 	// --- Netscaler CPX provisioner ---
 	netscalerOpts := []provnetscaler.Option{
-		provnetscaler.WithEndpoint(cfg.Netscaler.Endpoint),
-		provnetscaler.WithCredentials(cfg.Netscaler.Username, cfg.Netscaler.Password),
+		provnetscaler.WithEndpoint(cfg.Provisioner.Endpoint),
+		provnetscaler.WithCredentials(cfg.Provisioner.Username, cfg.Provisioner.Password),
 	}
-	if cfg.Netscaler.InsecureSkipVerify {
+	if cfg.Provisioner.InsecureSkipVerify {
 		netscalerOpts = append(netscalerOpts, provnetscaler.WithInsecureSkipVerify())
 	}
 
 	prov := provnetscaler.New(&provisioner.NetscalerMapper{}, netscalerOpts...)
 
 	// --- Reconciler ---
-	desiredState := triggermongo.NewDesiredState(collection, &trigger.WorkspaceMapper{})
+	desiredState := sourcemongo.NewDesiredState(collection, &trigger.WorkspaceMapper{})
 	rec := reconciler.New(desiredState, issuer, prov, logger)
 
 	reconcileInterval, err := time.ParseDuration(cfg.Reconcile.Interval)
@@ -110,48 +133,63 @@ func main() {
 			logger.Error("invalid leader_election.lease_duration", "value", cfg.LeaderElection.LeaseDuration, "error", err)
 			os.Exit(1)
 		}
-		renewDeadline, err := time.ParseDuration(cfg.LeaderElection.RenewDeadline)
-		if err != nil {
-			logger.Error("invalid leader_election.renew_deadline", "value", cfg.LeaderElection.RenewDeadline, "error", err)
-			os.Exit(1)
-		}
 		retryPeriod, err := time.ParseDuration(cfg.LeaderElection.RetryInterval)
 		if err != nil {
 			logger.Error("invalid leader_election.retry_interval", "value", cfg.LeaderElection.RetryInterval, "error", err)
 			os.Exit(1)
 		}
 
-		kubeConfig, err := rest.InClusterConfig()
-		if err != nil {
-			logger.Error("failed to get in-cluster config", "error", err)
-			os.Exit(1)
-		}
-		clientset, err := kubernetes.NewForConfig(kubeConfig)
-		if err != nil {
-			logger.Error("failed to create kubernetes client", "error", err)
-			os.Exit(1)
-		}
+		var elector corelease.LeaderElector
 
-		elector := leasekube.New(clientset,
-			leasekube.WithNamespace(cfg.LeaderElection.Namespace),
-			leasekube.WithLeaseName(cfg.LeaderElection.LeaseName),
-			leasekube.WithIdentity(identity),
-			leasekube.WithLeaseDuration(leaseDuration),
-			leasekube.WithRenewDeadline(renewDeadline),
-			leasekube.WithRetryPeriod(retryPeriod),
-		)
+		switch cfg.LeaderElection.Provider {
+		case "kube":
+			renewDeadline, err := time.ParseDuration(cfg.LeaderElection.RenewDeadline)
+			if err != nil {
+				logger.Error("invalid leader_election.renew_deadline", "value", cfg.LeaderElection.RenewDeadline, "error", err)
+				os.Exit(1)
+			}
+
+			kubeConfig, err := rest.InClusterConfig()
+			if err != nil {
+				logger.Error("failed to get in-cluster config", "error", err)
+				os.Exit(1)
+			}
+			clientset, err := kubernetes.NewForConfig(kubeConfig)
+			if err != nil {
+				logger.Error("failed to create kubernetes client", "error", err)
+				os.Exit(1)
+			}
+
+			elector = leasekube.New(clientset,
+				leasekube.WithNamespace(cfg.LeaderElection.Namespace),
+				leasekube.WithLeaseName(cfg.LeaderElection.LeaseName),
+				leasekube.WithIdentity(identity),
+				leasekube.WithLeaseDuration(leaseDuration),
+				leasekube.WithRenewDeadline(renewDeadline),
+				leasekube.WithRetryPeriod(retryPeriod),
+			)
+
+		case "mongo":
+			leaseCol := mongoClient.Database(cfg.Datasource.Database).Collection("leases")
+			elector = leasemongo.New(leaseCol,
+				leasemongo.WithLeaseName(cfg.LeaderElection.LeaseName),
+				leasemongo.WithIdentity(identity),
+				leasemongo.WithLeaseDuration(leaseDuration),
+				leasemongo.WithRetryInterval(retryPeriod),
+			)
+		}
 
 		orchOpts = append(orchOpts, orchestrator.WithLeaderElection(elector))
-		logger.Info("leader election enabled", "identity", identity, "namespace", cfg.LeaderElection.Namespace)
+		logger.Info("leader election enabled", "provider", cfg.LeaderElection.Provider, "identity", identity)
 	}
 
 	o := orchestrator.New(trig, issuer, prov, logger, orchOpts...)
 
 	logger.Info("sds-provisioner starting",
-		"mongodb", cfg.MongoDB.URI,
-		"database", cfg.MongoDB.Database,
-		"collection", cfg.MongoDB.Collection,
-		"netscaler", cfg.Netscaler.Endpoint,
+		"datasource", cfg.Datasource.URI,
+		"database", cfg.Datasource.Database,
+		"collection", cfg.Datasource.Collection,
+		"provisioner", cfg.Provisioner.Endpoint,
 		"reconcile_interval", reconcileInterval,
 	)
 

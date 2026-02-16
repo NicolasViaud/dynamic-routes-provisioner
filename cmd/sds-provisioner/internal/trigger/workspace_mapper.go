@@ -7,13 +7,13 @@ import (
 	"time"
 
 	core "github.com/nicol/dynamic-route-provisioner/core"
-	triggermongo "github.com/nicol/dynamic-route-provisioner/trigger-mongo"
+	sourcemongo "github.com/nicol/dynamic-route-provisioner/source-mongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // Compile-time check.
-var _ triggermongo.DocumentMapper = (*WorkspaceMapper)(nil)
+var _ sourcemongo.DocumentMapper = (*WorkspaceMapper)(nil)
 
 // WorkspaceMapper watches the workspace collection for documents containing
 // a "url" field and converts them into RouteEvents.
