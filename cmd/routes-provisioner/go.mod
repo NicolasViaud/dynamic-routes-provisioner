@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/sds-provisioner
+module github.com/nicol/dynamic-route-provisioner/routes-provisioner
 
 go 1.25.4
 

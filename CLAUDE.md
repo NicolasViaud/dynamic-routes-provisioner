@@ -25,9 +25,9 @@ impl/                              # Implementation modules (each its own Go mod
   lease-mongo/                     # MongoDB-based leader election
   lease-kube/                      # Kubernetes Lease API leader election (coordination/v1)
 cmd/
-  sds-provisioner/                 # Concrete use-case app (standard Go layout)
+  routes-provisioner/                 # Concrete use-case app (standard Go layout)
     main.go                        # Entrypoint
-    internal/config/               # Viper-based config (YAML + SDS_* env overrides)
+    internal/config/               # Viper-based config (YAML + ROUTES_* env overrides)
     internal/trigger/              # WorkspaceMapper (MongoDB workspace collection)
     internal/certificate/          # ChallengeServer (HTTP-01 solver)
     internal/provisioner/          # NetscalerMapper (Nitro API resource mapping)
@@ -38,7 +38,7 @@ cmd/
 
 ```bash
 # Build a specific module
-cd cmd/sds-provisioner && go build ./...
+cd cmd/routes-provisioner && go build ./...
 cd impl/source-mongo && go build ./...
 
 # Sync workspace after adding modules
@@ -55,7 +55,7 @@ No tests yet. When adding: `go test ./...` from the module directory.
 - `context.Context` on all blocking/IO methods, `log/slog` for logging
 - `go.work` for local module resolution (not published remotely yet)
 - `cmd/` apps use standard Go layout (`internal/`) with Viper for config
-- Env var override convention: `SDS_` prefix, `_` as delimiter (e.g. `SDS_DATASOURCE_URI`)
+- Env var override convention: `ROUTES_` prefix, `_` as delimiter (e.g. `ROUTES_DATASOURCE_URI`)
 - Config uses provider pattern: `datasource.provider`, `certificate.provider`, `provisioner.provider`
 - `sync.Mutex` in orchestrator serializes event handling and reconciliation
 

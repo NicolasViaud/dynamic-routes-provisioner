@@ -1,7 +1,7 @@
 go 1.25.4
 
 use (
-	./cmd/sds-provisioner
+	./cmd/routes-provisioner
 	./core
 	./impl/cert-acme-http
 	./impl/cert-selfsigned

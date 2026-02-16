@@ -149,7 +149,7 @@ func (e *NitroError) Error() string {
 }
 
 // List retrieves all resources of the given type, optionally filtered.
-// filter can be empty or a Nitro filter expression (e.g. "name:sds-*").
+// filter can be empty or a Nitro filter expression (e.g. "name:routes-*").
 func (c *NitroClient) List(ctx context.Context, resourceType, filter string) ([]map[string]any, error) {
 	url := fmt.Sprintf("%s/nitro/v1/config/%s", c.endpoint, resourceType)
 	if filter != "" {

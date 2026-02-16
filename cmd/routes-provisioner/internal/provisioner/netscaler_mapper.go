@@ -19,7 +19,7 @@ type NetscalerMapper struct{}
 // RouteID derives a stable Nitro resource name from the route host.
 // Dots are replaced with dashes to comply with Netscaler naming rules.
 func (m *NetscalerMapper) RouteID(req core.RouteRequest) string {
-	return "sds-" + strings.ReplaceAll(req.Host, ".", "-")
+	return "routes-" + strings.ReplaceAll(req.Host, ".", "-")
 }
 
 // MapProvision returns the ordered Nitro operations to create an SSL route:
@@ -203,7 +203,7 @@ func (m *NetscalerMapper) MapDeprovision(routeID string) ([]provnetscaler.NitroO
 
 // MapList returns the resource type and name prefix for discovering routes.
 func (m *NetscalerMapper) MapList() (string, string) {
-	return "lbvserver", "sds-"
+	return "lbvserver", "routes-"
 }
 
 // MapBatchProvision combines provision operations for multiple routes.

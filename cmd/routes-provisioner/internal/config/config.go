@@ -56,8 +56,8 @@ type ProvisionerConfig struct {
 }
 
 // Load reads the YAML config file then applies environment variable overrides.
-// Environment variables use the SDS_ prefix with _ as the key delimiter.
-// For example, SDS_MONGODB_URI overrides mongodb.uri.
+// Environment variables use the ROUTES_ prefix with _ as the key delimiter.
+// For example, ROUTES_MONGODB_URI overrides mongodb.uri.
 func Load(path string) (*Config, error) {
 	v := viper.New()
 
@@ -73,7 +73,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("reconcile.interval", "5m")
 	v.SetDefault("leader_election.enabled", false)
 	v.SetDefault("leader_election.provider", "kube")
-	v.SetDefault("leader_election.lease_name", "sds-provisioner-leader")
+	v.SetDefault("leader_election.lease_name", "routes-provisioner-leader")
 	v.SetDefault("leader_election.namespace", "default")
 	v.SetDefault("leader_election.lease_duration", "15s")
 	v.SetDefault("leader_election.renew_deadline", "10s")
@@ -85,8 +85,8 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
-	// Environment variable overrides with SDS_ prefix.
-	v.SetEnvPrefix("SDS")
+	// Environment variable overrides with ROUTES_ prefix.
+	v.SetEnvPrefix("ROUTES")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -102,10 +102,10 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// ConfigPath returns the config file path from the SDS_CONFIG_PATH env var,
+// ConfigPath returns the config file path from the ROUTES_CONFIG_PATH env var,
 // or the provided default.
 func ConfigPath(defaultPath string) string {
-	if v := os.Getenv("SDS_CONFIG_PATH"); v != "" {
+	if v := os.Getenv("ROUTES_CONFIG_PATH"); v != "" {
 		return v
 	}
 	return defaultPath
@@ -113,24 +113,24 @@ func ConfigPath(defaultPath string) string {
 
 func validate(c *Config) error {
 	if c.Datasource.URI == "" {
-		return fmt.Errorf("datasource.uri is required (or set SDS_DATASOURCE_URI)")
+		return fmt.Errorf("datasource.uri is required (or set ROUTES_DATASOURCE_URI)")
 	}
 	if c.Datasource.Database == "" {
-		return fmt.Errorf("datasource.database is required (or set SDS_DATASOURCE_DATABASE)")
+		return fmt.Errorf("datasource.database is required (or set ROUTES_DATASOURCE_DATABASE)")
 	}
 	if c.Provisioner.Endpoint == "" {
-		return fmt.Errorf("provisioner.endpoint is required (or set SDS_PROVISIONER_ENDPOINT)")
+		return fmt.Errorf("provisioner.endpoint is required (or set ROUTES_PROVISIONER_ENDPOINT)")
 	}
 	switch c.Certificate.Provider {
 	case "acme", "selfsigned":
 	default:
-		return fmt.Errorf("certificate.provider must be 'acme' or 'selfsigned' (or set SDS_CERTIFICATE_PROVIDER)")
+		return fmt.Errorf("certificate.provider must be 'acme' or 'selfsigned' (or set ROUTES_CERTIFICATE_PROVIDER)")
 	}
 	if c.LeaderElection.Enabled {
 		switch c.LeaderElection.Provider {
 		case "kube", "mongo":
 		default:
-			return fmt.Errorf("leader_election.provider must be 'kube' or 'mongo' (or set SDS_LEADER_ELECTION_PROVIDER)")
+			return fmt.Errorf("leader_election.provider must be 'kube' or 'mongo' (or set ROUTES_LEADER_ELECTION_PROVIDER)")
 		}
 	}
 	return nil

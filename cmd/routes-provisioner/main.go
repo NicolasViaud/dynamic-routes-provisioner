@@ -22,10 +22,10 @@ import (
 	provnetscaler "github.com/nicol/dynamic-route-provisioner/provisioner-netscaler"
 	sourcemongo "github.com/nicol/dynamic-route-provisioner/source-mongo"
 
-	"github.com/nicol/dynamic-route-provisioner/sds-provisioner/internal/certificate"
-	"github.com/nicol/dynamic-route-provisioner/sds-provisioner/internal/config"
-	"github.com/nicol/dynamic-route-provisioner/sds-provisioner/internal/provisioner"
-	"github.com/nicol/dynamic-route-provisioner/sds-provisioner/internal/trigger"
+	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/certificate"
+	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/config"
+	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/provisioner"
+	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/trigger"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -185,7 +185,7 @@ func main() {
 
 	o := orchestrator.New(trig, issuer, prov, logger, orchOpts...)
 
-	logger.Info("sds-provisioner starting",
+	logger.Info("routes-provisioner starting",
 		"datasource", cfg.Datasource.URI,
 		"database", cfg.Datasource.Database,
 		"collection", cfg.Datasource.Collection,

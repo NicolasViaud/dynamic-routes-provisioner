@@ -44,7 +44,7 @@ dynamic-route-provisioner/
 │   ├── lease-mongo/                   # MongoDB-based leader election
 │   └── lease-kube/                    # Kubernetes Lease API leader election
 └── cmd/
-    └── sds-provisioner/               # Concrete use-case application
+    └── routes-provisioner/               # Concrete use-case application
         ├── main.go                    # Entrypoint
         ├── internal/                  # Config, mappers, challenge server
         └── config.yaml                # Example configuration
@@ -96,58 +96,58 @@ type LeaderElector interface {
 | `lease-mongo` | `LeaderElector` | — | MongoDB document-based leader election with TTL |
 | `lease-kube` | `LeaderElector` | — | Kubernetes coordination/v1 Lease API |
 
-## SDS Provisioner (use-case app)
+## Routes Provisioner (use-case app)
 
 Watches a MongoDB `workspace` collection for documents with a `url` field, issues ACME certificates, and configures a Netscaler CPX gateway. Supports state reconciliation and leader election for HA deployments.
 
 ### Configuration
 
-YAML base config with environment variable overrides (via [Viper](https://github.com/spf13/viper)). Env vars use the `SDS_` prefix:
+YAML base config with environment variable overrides (via [Viper](https://github.com/spf13/viper)). Env vars use the `ROUTES_` prefix:
 
 ```yaml
 datasource:
-  provider: "mongodb"                    # SDS_DATASOURCE_PROVIDER
-  uri: "mongodb://localhost:27017"       # SDS_DATASOURCE_URI
-  database: "mydb"                       # SDS_DATASOURCE_DATABASE
-  collection: "workspace"               # SDS_DATASOURCE_COLLECTION
+  provider: "mongodb"                    # ROUTES_DATASOURCE_PROVIDER
+  uri: "mongodb://localhost:27017"       # ROUTES_DATASOURCE_URI
+  database: "mydb"                       # ROUTES_DATASOURCE_DATABASE
+  collection: "workspace"               # ROUTES_DATASOURCE_COLLECTION
 
 certificate:
-  provider: "selfsigned"                 # SDS_CERTIFICATE_PROVIDER — "acme" or "selfsigned"
-  email: "admin@example.com"             # SDS_CERTIFICATE_EMAIL (acme only)
-  directory_url: "https://acme-..."      # SDS_CERTIFICATE_DIRECTORY_URL (acme only)
-  challenge_port: 80                     # SDS_CERTIFICATE_CHALLENGE_PORT (acme only)
-  validity: "8760h"                      # SDS_CERTIFICATE_VALIDITY (selfsigned only)
-  organization: "Self-Signed"            # SDS_CERTIFICATE_ORGANIZATION (selfsigned only)
+  provider: "selfsigned"                 # ROUTES_CERTIFICATE_PROVIDER — "acme" or "selfsigned"
+  email: "admin@example.com"             # ROUTES_CERTIFICATE_EMAIL (acme only)
+  directory_url: "https://acme-..."      # ROUTES_CERTIFICATE_DIRECTORY_URL (acme only)
+  challenge_port: 80                     # ROUTES_CERTIFICATE_CHALLENGE_PORT (acme only)
+  validity: "8760h"                      # ROUTES_CERTIFICATE_VALIDITY (selfsigned only)
+  organization: "Self-Signed"            # ROUTES_CERTIFICATE_ORGANIZATION (selfsigned only)
 
 provisioner:
-  provider: "netscaler"                  # SDS_PROVISIONER_PROVIDER
-  endpoint: "https://10.0.0.1"           # SDS_PROVISIONER_ENDPOINT
-  username: "nsroot"                     # SDS_PROVISIONER_USERNAME
-  password: "secret"                     # SDS_PROVISIONER_PASSWORD
-  insecure_skip_verify: true             # SDS_PROVISIONER_INSECURE_SKIP_VERIFY
+  provider: "netscaler"                  # ROUTES_PROVISIONER_PROVIDER
+  endpoint: "https://10.0.0.1"           # ROUTES_PROVISIONER_ENDPOINT
+  username: "nsroot"                     # ROUTES_PROVISIONER_USERNAME
+  password: "secret"                     # ROUTES_PROVISIONER_PASSWORD
+  insecure_skip_verify: true             # ROUTES_PROVISIONER_INSECURE_SKIP_VERIFY
 
 reconcile:
-  interval: "5m"                         # SDS_RECONCILE_INTERVAL
+  interval: "5m"                         # ROUTES_RECONCILE_INTERVAL
 
 leader_election:
-  enabled: false                         # SDS_LEADER_ELECTION_ENABLED
-  provider: "kube"                       # SDS_LEADER_ELECTION_PROVIDER — "kube" or "mongo"
-  lease_name: "sds-provisioner-leader"   # SDS_LEADER_ELECTION_LEASE_NAME
-  namespace: "default"                   # SDS_LEADER_ELECTION_NAMESPACE (kube only)
-  lease_duration: "15s"                  # SDS_LEADER_ELECTION_LEASE_DURATION
-  renew_deadline: "10s"                  # SDS_LEADER_ELECTION_RENEW_DEADLINE (kube only)
-  retry_interval: "2s"                   # SDS_LEADER_ELECTION_RETRY_INTERVAL
+  enabled: false                         # ROUTES_LEADER_ELECTION_ENABLED
+  provider: "kube"                       # ROUTES_LEADER_ELECTION_PROVIDER — "kube" or "mongo"
+  lease_name: "routes-provisioner-leader"   # ROUTES_LEADER_ELECTION_LEASE_NAME
+  namespace: "default"                   # ROUTES_LEADER_ELECTION_NAMESPACE (kube only)
+  lease_duration: "15s"                  # ROUTES_LEADER_ELECTION_LEASE_DURATION
+  renew_deadline: "10s"                  # ROUTES_LEADER_ELECTION_RENEW_DEADLINE (kube only)
+  retry_interval: "2s"                   # ROUTES_LEADER_ELECTION_RETRY_INTERVAL
 ```
 
 ### Run
 
 ```bash
-cd cmd/sds-provisioner
-go build -o sds-provisioner .
-./sds-provisioner -config config.yaml
+cd cmd/routes-provisioner
+go build -o routes-provisioner .
+./routes-provisioner -config config.yaml
 
 # Or via env vars
-SDS_CONFIG_PATH=/etc/sds/config.yaml ./sds-provisioner
+ROUTES_CONFIG_PATH=/etc/routes/config.yaml ./routes-provisioner
 ```
 
 ## Building
@@ -156,7 +156,7 @@ Requires Go 1.25.4+.
 
 ```bash
 # Build a module
-cd cmd/sds-provisioner && go build ./...
+cd cmd/routes-provisioner && go build ./...
 
 # Sync workspace after changes
 go work sync
