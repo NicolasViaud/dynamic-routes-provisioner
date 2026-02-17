@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -42,6 +41,16 @@ func WithReconciler(r *reconciler.Reconciler, interval time.Duration) Option {
 	}
 }
 
+// WithTrigger enables event-driven processing using the given trigger.
+// When not set, the orchestrator runs in reconciliation-only mode.
+// If the trigger fails at runtime, the orchestrator degrades gracefully
+// to reconciliation-only mode.
+func WithTrigger(t trigger.Trigger) Option {
+	return func(o *Orchestrator) {
+		o.trigger = t
+	}
+}
+
 // WithLeaderElection enables leader election. When set, the orchestrator
 // only processes events and runs reconciliation while this instance is the
 // leader. On leadership loss the event loop and reconciliation stop; on
@@ -52,12 +61,11 @@ func WithLeaderElection(le lease.LeaderElector) Option {
 	}
 }
 
-func New(t trigger.Trigger, i certificate.Issuer, p provisioner.RouteProvisioner, logger *slog.Logger, opts ...Option) *Orchestrator {
+func New(i certificate.Issuer, p provisioner.RouteProvisioner, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	o := &Orchestrator{
-		trigger:     t,
 		issuer:      i,
 		provisioner: p,
 		logger:      logger,
@@ -101,23 +109,32 @@ func (o *Orchestrator) run(ctx context.Context) error {
 		}
 	}
 
-	// Start the trigger.
-	events := make(chan core.RouteEvent)
-	triggerErrCh := make(chan error, 1)
-	go func() {
-		triggerErrCh <- o.trigger.Start(ctx, events)
-	}()
+	// Start the trigger if configured.
+	var events chan core.RouteEvent
+	var triggerErrCh chan error
+	if o.trigger != nil {
+		events = make(chan core.RouteEvent)
+		triggerErrCh = make(chan error, 1)
+		go func() {
+			triggerErrCh <- o.trigger.Start(ctx, events)
+		}()
+	}
 
 	// Start periodic reconciliation if interval > 0.
 	if o.reconciler != nil && o.reconcileInterval > 0 {
 		go o.reconcileLoop(ctx)
 	}
 
-	o.logger.Info("orchestrator started",
-		"trigger", o.trigger.Name(),
+	logAttrs := []any{
 		"issuer", o.issuer.Name(),
 		"provisioner", o.provisioner.Name(),
-	)
+	}
+	if o.trigger != nil {
+		logAttrs = append(logAttrs, "trigger", o.trigger.Name())
+	} else {
+		logAttrs = append(logAttrs, "trigger", "none (reconciliation only)")
+	}
+	o.logger.Info("orchestrator started", logAttrs...)
 
 	for {
 		select {
@@ -125,7 +142,11 @@ func (o *Orchestrator) run(ctx context.Context) error {
 			return ctx.Err()
 
 		case err := <-triggerErrCh:
-			return fmt.Errorf("trigger %s failed: %w", o.trigger.Name(), err)
+			o.logger.Error("trigger failed, continuing with reconciliation only",
+				"trigger", o.trigger.Name(), "error", err)
+			// Disable trigger channels so we never select on them again.
+			events = nil
+			triggerErrCh = nil
 
 		case event := <-events:
 			o.handleEvent(ctx, event)

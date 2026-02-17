@@ -306,6 +306,9 @@ func main() {
 	orchOpts := []orchestrator.Option{
 		orchestrator.WithReconciler(rec, reconcileInterval),
 	}
+	if trig != nil {
+		orchOpts = append(orchOpts, orchestrator.WithTrigger(trig))
+	}
 
 	// --- Leader Election (optional) ---
 	if cfg.LeaderElection.Enabled {
@@ -358,7 +361,7 @@ func main() {
 		logger.Info("leader election enabled", "provider", cfg.LeaderElection.Provider, "identity", identity)
 	}
 
-	o := orchestrator.New(trig, issuer, prov, logger.With("component", "orchestrator"), orchOpts...)
+	o := orchestrator.New(issuer, prov, logger.With("component", "orchestrator"), orchOpts...)
 
 	logger.Info("routes-provisioner starting",
 		"datasource", cfg.Datasource.Provider,

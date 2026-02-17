@@ -81,15 +81,55 @@ Best for environments where the number of routes is large and the Kubernetes API
 
 No Kubernetes objects are created or watched during normal operation. Leader election can use MongoDB-based leases to stay off the API server entirely. This configuration scales independently of cluster size and avoids etcd write amplification.
 
-**Key configuration:**
+**Example configuration:**
 
-| Setting | Value | Why |
-|---|---|---|
-| `datasource.provider` | `mongodb` | Change stream trigger + desired state from the app database |
-| `certificate.provider` | `vault` | Vault PKI issues certs — no ACME rate limits, sub-second issuance |
-| `certificate_store.provider` | `vault` | Certs cached in Vault KV v2 — no etcd writes, audit logging, access policies |
-| `provisioner.provider` | `netscaler` | Direct Nitro API calls to the gateway — no Ingress CRs, no controller watches |
-| `leader_election.provider` | `mongo` | Leader election via MongoDB TTL documents — API server stays untouched |
+```yaml
+datasource:
+  provider: "mongodb"
+  uri: "mongodb://mongo:27017"
+  database: "mydb"
+  collection: "routes"
+  mapper:
+    url_field: "url"
+    path: "/"
+    tls: true
+    backends:
+      - service_name: "app-svc"
+        port: 8080
+        weight: 100
+
+certificate:
+  provider: "vault"
+  vault_address: "http://vault:8200"
+  vault_role: "route-issuer"
+  vault_mount: "pki"
+  vault_ttl: "720h"
+
+certificate_store:
+  enabled: true
+  provider: "vault"
+  vault_address: "http://vault:8200"
+  vault_mount: "secret"
+  vault_prefix: "route-tls"
+  renew_before: "720h"
+
+provisioner:
+  provider: "netscaler"
+  endpoint: "https://10.0.0.1"
+  username: "nsroot"
+  password: "secret"
+  insecure_skip_verify: true
+
+reconcile:
+  interval: "5m"
+
+leader_election:
+  enabled: true
+  provider: "mongo"
+  lease_name: "routes-provisioner-leader"
+  lease_duration: "15s"
+  retry_interval: "2s"
+```
 
 ### Kubernetes-native with external certificate management
 
@@ -99,17 +139,47 @@ Best when the application does not ship its own ingress controller but you want 
 
 Certificate issuance and storage are handled outside this application (e.g. cert-manager watches the Ingress annotations and creates the matching Secrets). The provisioner only needs to know the Secret naming convention so it can set the `tls.secretName` field on the Ingress.
 
-**Key configuration:**
+**Example configuration:**
 
-| Setting | Value | Why |
-|---|---|---|
-| `datasource.provider` | `mongodb` | Change stream trigger + desired state from the app database |
-| `certificate.provider` | `selfsigned` | Placeholder — cert-manager handles real issuance externally |
-| `certificate_store.enabled` | `false` | No cert store — Secrets are managed by cert-manager |
-| `provisioner.provider` | `ingress` | Manages Kubernetes Ingress resources with packed rules |
-| `provisioner.max_routes_per_ingress` | `50` | Pack up to 50 host rules per Ingress to minimize object count |
-| `provisioner.ingress_class` | `nginx` | Target the nginx ingress controller (or any other class) |
-| `leader_election.provider` | `kube` | Kubernetes Lease API — fits the K8s-native approach |
+```yaml
+datasource:
+  provider: "mongodb"
+  uri: "mongodb://mongo:27017"
+  database: "mydb"
+  collection: "routes"
+  mapper:
+    url_field: "url"
+    path: "/"
+    tls: true
+    backends:
+      - service_name: "app-svc"
+        port: 8080
+        weight: 100
+
+certificate:
+  provider: "selfsigned"            # placeholder — cert-manager handles real issuance
+
+certificate_store:
+  enabled: false                    # Secrets are managed by cert-manager
+
+provisioner:
+  provider: "ingress"
+  namespace: "default"
+  max_routes_per_ingress: 50
+  ingress_class: "nginx"
+
+reconcile:
+  interval: "5m"
+
+leader_election:
+  enabled: true
+  provider: "kube"
+  lease_name: "routes-provisioner-leader"
+  namespace: "default"
+  lease_duration: "15s"
+  renew_deadline: "10s"
+  retry_interval: "2s"
+```
 
 ### Kubernetes-native with integrated certificate management
 
@@ -117,16 +187,54 @@ Same Kubernetes-native Ingress approach, but certificates are issued and stored 
 
 **Pipeline:** MongoDB change stream &rarr; Vault PKI issuer &rarr; certstore-kube (K8s Secrets) &rarr; Ingress provisioner
 
-**Key configuration:**
+**Example configuration:**
 
-| Setting | Value | Why |
-|---|---|---|
-| `datasource.provider` | `mongodb` | Change stream trigger + desired state from the app database |
-| `certificate.provider` | `vault` | Vault PKI for certificate issuance |
-| `certificate_store.enabled` | `true` | Cache certs as K8s TLS Secrets |
-| `certificate_store.provider` | `kube` | Secrets in the same namespace as the Ingress resources |
-| `provisioner.provider` | `ingress` | Manages Kubernetes Ingress resources with packed rules |
-| `provisioner.max_routes_per_ingress` | `50` | Pack up to 50 host rules per Ingress to minimize object count |
+```yaml
+datasource:
+  provider: "mongodb"
+  uri: "mongodb://mongo:27017"
+  database: "mydb"
+  collection: "routes"
+  mapper:
+    url_field: "url"
+    path: "/"
+    tls: true
+    backends:
+      - service_name: "app-svc"
+        port: 8080
+        weight: 100
+
+certificate:
+  provider: "vault"
+  vault_address: "http://vault:8200"
+  vault_role: "route-issuer"
+  vault_mount: "pki"
+  vault_ttl: "720h"
+
+certificate_store:
+  enabled: true
+  provider: "kube"
+  namespace: "default"
+  secret_prefix: "route-tls"
+  renew_before: "720h"
+
+provisioner:
+  provider: "ingress"
+  namespace: "default"
+  max_routes_per_ingress: 50
+
+reconcile:
+  interval: "5m"
+
+leader_election:
+  enabled: true
+  provider: "kube"
+  lease_name: "routes-provisioner-leader"
+  namespace: "default"
+  lease_duration: "15s"
+  renew_deadline: "10s"
+  retry_interval: "2s"
+```
 
 ## Building
 
