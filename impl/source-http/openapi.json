@@ -1,0 +1,256 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Dynamic Route Provisioner — HTTP Source",
+    "description": "HTTP-based trigger and desired state provider for manual testing and development. Implements both trigger.Trigger and desired.DesiredStateProvider interfaces.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/routes": {
+      "get": {
+        "summary": "List desired routes",
+        "description": "Returns all routes currently in the desired state.",
+        "operationId": "listRoutes",
+        "tags": ["Desired State"],
+        "responses": {
+          "200": {
+            "description": "List of route requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/RouteRequest" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a route",
+        "description": "Adds or updates a route in the desired state. Keyed by host — posting the same host overwrites the previous entry.",
+        "operationId": "addRoute",
+        "tags": ["Desired State"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RouteRequest" },
+              "example": {
+                "host": "app.example.com",
+                "path": "/",
+                "tls": true,
+                "backends": [
+                  { "serviceName": "app-svc", "port": 8080, "weight": 100 }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Route added to desired state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RouteRequest" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or missing host"
+          }
+        }
+      }
+    },
+    "/routes/{host}": {
+      "delete": {
+        "summary": "Remove a route",
+        "description": "Removes a route from the desired state by host.",
+        "operationId": "deleteRoute",
+        "tags": ["Desired State"],
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "app.example.com"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Route removed"
+          },
+          "404": {
+            "description": "Route not found"
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "List events",
+        "description": "Returns all events that have been pushed so far.",
+        "operationId": "listEvents",
+        "tags": ["Trigger"],
+        "responses": {
+          "200": {
+            "description": "List of route events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/RouteEvent" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Push an event",
+        "description": "Pushes a route event. If the trigger is running (Start was called), the event is forwarded to the orchestrator in real-time.",
+        "operationId": "pushEvent",
+        "tags": ["Trigger"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RouteEvent" },
+              "examples": {
+                "create": {
+                  "summary": "Create a route",
+                  "value": {
+                    "type": "route.created",
+                    "route": {
+                      "host": "app.example.com",
+                      "path": "/",
+                      "tls": true,
+                      "backends": [
+                        { "serviceName": "app-svc", "port": 8080, "weight": 100 }
+                      ]
+                    }
+                  }
+                },
+                "update": {
+                  "summary": "Update a route",
+                  "value": {
+                    "type": "route.updated",
+                    "route": {
+                      "host": "app.example.com",
+                      "path": "/v2",
+                      "tls": true,
+                      "backends": [
+                        { "serviceName": "app-svc-v2", "port": 8080, "weight": 100 }
+                      ]
+                    }
+                  }
+                },
+                "delete": {
+                  "summary": "Delete a route",
+                  "value": {
+                    "type": "route.deleted",
+                    "route": {
+                      "id": "route-app",
+                      "host": "app.example.com"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Event accepted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RouteEvent" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RouteRequest": {
+        "type": "object",
+        "required": ["host"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable route identifier"
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname for the route",
+            "example": "app.example.com"
+          },
+          "path": {
+            "type": "string",
+            "description": "URL path prefix",
+            "example": "/"
+          },
+          "backends": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Backend" }
+          },
+          "tls": {
+            "type": "boolean",
+            "description": "Whether to issue a TLS certificate for this route"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Arbitrary key-value metadata"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Backend": {
+        "type": "object",
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "example": "app-svc"
+          },
+          "port": {
+            "type": "integer",
+            "example": 8080
+          },
+          "weight": {
+            "type": "integer",
+            "example": 100
+          }
+        }
+      },
+      "RouteEvent": {
+        "type": "object",
+        "required": ["type", "route"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["route.created", "route.updated", "route.deleted"],
+            "description": "Event type"
+          },
+          "route": {
+            "$ref": "#/components/schemas/RouteRequest"
+          },
+          "rawData": {
+            "type": "string",
+            "format": "byte",
+            "description": "Optional raw payload from the source (base64)"
+          }
+        }
+      }
+    }
+  }
+}

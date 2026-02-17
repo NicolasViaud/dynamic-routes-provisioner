@@ -4,13 +4,17 @@ import (
 	"context"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/nicol/dynamic-route-provisioner/core/desired"
 	"github.com/nicol/dynamic-route-provisioner/core/orchestrator"
+	coreprov "github.com/nicol/dynamic-route-provisioner/core/provisioner"
 	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
+	"github.com/nicol/dynamic-route-provisioner/core/trigger"
 
 	corecert "github.com/nicol/dynamic-route-provisioner/core/certificate"
 
@@ -18,12 +22,15 @@ import (
 	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
 	certselfsigned "github.com/nicol/dynamic-route-provisioner/cert-selfsigned"
 	certvault "github.com/nicol/dynamic-route-provisioner/cert-vault"
+	certstorefile "github.com/nicol/dynamic-route-provisioner/certstore-file"
 	certstorekube "github.com/nicol/dynamic-route-provisioner/certstore-kube"
 	certstorevault "github.com/nicol/dynamic-route-provisioner/certstore-vault"
 	corelease "github.com/nicol/dynamic-route-provisioner/core/lease"
 	leasekube "github.com/nicol/dynamic-route-provisioner/lease-kube"
 	leasemongo "github.com/nicol/dynamic-route-provisioner/lease-mongo"
+	provlog "github.com/nicol/dynamic-route-provisioner/provisioner-log"
 	provnetscaler "github.com/nicol/dynamic-route-provisioner/provisioner-netscaler"
+	sourcehttp "github.com/nicol/dynamic-route-provisioner/source-http"
 	sourcemongo "github.com/nicol/dynamic-route-provisioner/source-mongo"
 
 	"github.com/nicol/dynamic-route-provisioner/routes-provisioner/internal/certificate"
@@ -41,6 +48,7 @@ func main() {
 	configFlag := flag.String("config", "config.yaml", "path to configuration file")
 	flag.Parse()
 
+	// Bootstrap logger (JSON) for config loading errors.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	configPath := config.ConfigPath(*configFlag)
@@ -51,19 +59,49 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Reconfigure logger based on config.
+	switch cfg.Log.Format {
+	case "text":
+		logger = slog.New(config.NewTextHandler(os.Stdout, slog.LevelInfo))
+	default:
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// --- MongoDB trigger ---
-	mongoClient, err := mongo.Connect(options.Client().ApplyURI(cfg.Datasource.URI))
-	if err != nil {
-		logger.Error("failed to connect to mongodb", "error", err)
-		os.Exit(1)
-	}
-	defer mongoClient.Disconnect(ctx)
+	// --- Datasource (trigger + desired state) ---
+	var trig trigger.Trigger
+	var desiredState desired.DesiredStateProvider
+	var mongoClient *mongo.Client
 
-	collection := mongoClient.Database(cfg.Datasource.Database).Collection(cfg.Datasource.Collection)
-	trig := sourcemongo.New(collection, &source.MongoMapper{})
+	switch cfg.Datasource.Provider {
+	case "mongodb":
+		mongoClient, err = mongo.Connect(options.Client().ApplyURI(cfg.Datasource.URI))
+		if err != nil {
+			logger.Error("failed to connect to mongodb", "error", err)
+			os.Exit(1)
+		}
+		defer mongoClient.Disconnect(ctx)
+
+		collection := mongoClient.Database(cfg.Datasource.Database).Collection(cfg.Datasource.Collection)
+		trig = sourcemongo.New(collection, &source.MongoMapper{})
+		desiredState = sourcemongo.NewDesiredState(collection, &source.MongoMapper{})
+
+	case "http":
+		httpSource := sourcehttp.New(logger.With("component", "source-http"))
+		trig = httpSource
+		desiredState = httpSource
+
+		go func() {
+			addr := cfg.Datasource.ListenAddr
+			logger.Info("http source API starting", "addr", addr, "swagger", "http://localhost"+addr+"/swagger")
+			if err := http.ListenAndServe(addr, httpSource.Handler()); err != nil {
+				logger.Error("http source API failed", "error", err)
+				os.Exit(1)
+			}
+		}()
+	}
 
 	// --- Certificate issuer ---
 	var issuer corecert.Issuer
@@ -163,7 +201,7 @@ func main() {
 
 		switch cfg.CertificateStore.Provider {
 		case "kube":
-			issuer = certstorekube.New(issuer, clientset, logger,
+			issuer = certstorekube.New(issuer, clientset, logger.With("component", "certstore-kube"),
 				certstorekube.WithNamespace(cfg.CertificateStore.Namespace),
 				certstorekube.WithSecretPrefix(cfg.CertificateStore.SecretPrefix),
 				certstorekube.WithRenewBefore(renewBefore),
@@ -185,29 +223,39 @@ func main() {
 				storeOpts = append(storeOpts, certstorevault.WithPrefix(cfg.CertificateStore.VaultPrefix))
 			}
 			var err error
-			issuer, err = certstorevault.New(issuer, logger, storeOpts...)
+			issuer, err = certstorevault.New(issuer, logger.With("component", "certstore-vault"), storeOpts...)
 			if err != nil {
 				logger.Error("failed to create vault certificate store", "error", err)
 				os.Exit(1)
 			}
+		case "file":
+			issuer = certstorefile.New(issuer, cfg.CertificateStore.Dir, logger.With("component", "certstore-file"),
+				certstorefile.WithRenewBefore(renewBefore),
+			)
 		}
 		logger.Info("certificate store enabled", "provider", cfg.CertificateStore.Provider)
 	}
 
-	// --- Netscaler CPX provisioner ---
-	netscalerOpts := []provnetscaler.Option{
-		provnetscaler.WithEndpoint(cfg.Provisioner.Endpoint),
-		provnetscaler.WithCredentials(cfg.Provisioner.Username, cfg.Provisioner.Password),
-	}
-	if cfg.Provisioner.InsecureSkipVerify {
-		netscalerOpts = append(netscalerOpts, provnetscaler.WithInsecureSkipVerify())
-	}
+	// --- Provisioner ---
+	var prov coreprov.RouteProvisioner
 
-	prov := provnetscaler.New(&provisioner.NetscalerMapper{}, netscalerOpts...)
+	switch cfg.Provisioner.Provider {
+	case "netscaler":
+		netscalerOpts := []provnetscaler.Option{
+			provnetscaler.WithEndpoint(cfg.Provisioner.Endpoint),
+			provnetscaler.WithCredentials(cfg.Provisioner.Username, cfg.Provisioner.Password),
+		}
+		if cfg.Provisioner.InsecureSkipVerify {
+			netscalerOpts = append(netscalerOpts, provnetscaler.WithInsecureSkipVerify())
+		}
+		prov = provnetscaler.New(&provisioner.NetscalerMapper{}, netscalerOpts...)
+	case "log":
+		prov = provlog.New(logger.With("component", "provisioner-log"))
+	}
+	logger.Info("provisioner configured", "provider", cfg.Provisioner.Provider)
 
 	// --- Reconciler ---
-	desiredState := sourcemongo.NewDesiredState(collection, &source.MongoMapper{})
-	rec := reconciler.New(desiredState, issuer, prov, logger)
+	rec := reconciler.New(desiredState, issuer, prov, logger.With("component", "reconciler"))
 
 	reconcileInterval, err := time.ParseDuration(cfg.Reconcile.Interval)
 	if err != nil {
@@ -271,12 +319,10 @@ func main() {
 		logger.Info("leader election enabled", "provider", cfg.LeaderElection.Provider, "identity", identity)
 	}
 
-	o := orchestrator.New(trig, issuer, prov, logger, orchOpts...)
+	o := orchestrator.New(trig, issuer, prov, logger.With("component", "orchestrator"), orchOpts...)
 
 	logger.Info("routes-provisioner starting",
-		"datasource", cfg.Datasource.URI,
-		"database", cfg.Datasource.Database,
-		"collection", cfg.Datasource.Collection,
+		"datasource", cfg.Datasource.Provider,
 		"provisioner", cfg.Provisioner.Endpoint,
 		"reconcile_interval", reconcileInterval,
 	)

@@ -1,8 +1,8 @@
 datasource:
-  provider: "mongodb"                   # ROUTES_DATASOURCE_PROVIDER
+  provider: "mongodb"                   # ROUTES_DATASOURCE_PROVIDER — "mongodb" or "http"
   uri: "mongodb://localhost:27017"      # ROUTES_DATASOURCE_URI
   database: "mydb"                      # ROUTES_DATASOURCE_DATABASE
-  collection: "routes"              # ROUTES_DATASOURCE_COLLECTION
+  collection: "routes"                  # ROUTES_DATASOURCE_COLLECTION
 
 certificate:
   provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"
@@ -23,10 +23,12 @@ certificate:
 
 certificate_store:
   enabled: false                    # ROUTES_CERTIFICATE_STORE_ENABLED — cache certs in K8s Secrets
-  provider: "kube"                  # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube" or "vault"
+  provider: "kube"                  # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube", "vault", or "file"
   namespace: "default"              # ROUTES_CERTIFICATE_STORE_NAMESPACE
   secret_prefix: "route-tls"       # ROUTES_CERTIFICATE_STORE_SECRET_PREFIX
   renew_before: "720h"             # ROUTES_CERTIFICATE_STORE_RENEW_BEFORE — re-issue 30 days before expiry
+  # --- file only ---
+  # dir: ".certs"                     # ROUTES_CERTIFICATE_STORE_DIR — local directory for cached certs
   # --- vault only ---
   # vault_address: "http://127.0.0.1:8200"  # ROUTES_CERTIFICATE_STORE_VAULT_ADDRESS — or VAULT_ADDR env
   # vault_token: ""                          # ROUTES_CERTIFICATE_STORE_VAULT_TOKEN — or VAULT_TOKEN env
@@ -34,7 +36,7 @@ certificate_store:
   # vault_prefix: "route-tls"               # ROUTES_CERTIFICATE_STORE_VAULT_PREFIX — path prefix in KV
 
 provisioner:
-  provider: "netscaler"                 # ROUTES_PROVISIONER_PROVIDER
+  provider: "netscaler"                 # ROUTES_PROVISIONER_PROVIDER — "netscaler" or "log"
   endpoint: "https://10.0.0.1"         # ROUTES_PROVISIONER_ENDPOINT
   username: "nsroot"                    # ROUTES_PROVISIONER_USERNAME
   password: "secret"                    # ROUTES_PROVISIONER_PASSWORD

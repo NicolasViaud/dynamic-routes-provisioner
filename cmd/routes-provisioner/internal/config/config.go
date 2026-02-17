@@ -9,12 +9,17 @@ import (
 )
 
 type Config struct {
+	Log              LogConfig              `mapstructure:"log"`
 	Datasource       DatasourceConfig       `mapstructure:"datasource"`
 	Certificate      CertificateConfig      `mapstructure:"certificate"`
 	CertificateStore CertificateStoreConfig `mapstructure:"certificate_store"`
 	Provisioner      ProvisionerConfig      `mapstructure:"provisioner"`
 	Reconcile        ReconcileConfig        `mapstructure:"reconcile"`
 	LeaderElection   LeaderElectionConfig   `mapstructure:"leader_election"`
+}
+
+type LogConfig struct {
+	Format string `mapstructure:"format"` // "json" or "text"
 }
 
 type LeaderElectionConfig struct {
@@ -30,10 +35,11 @@ type LeaderElectionConfig struct {
 
 type CertificateStoreConfig struct {
 	Enabled      bool   `mapstructure:"enabled"`
-	Provider     string `mapstructure:"provider"`      // "kube" or "vault"
+	Provider     string `mapstructure:"provider"`      // "kube", "vault", or "file"
 	Namespace    string `mapstructure:"namespace"`     // kube only
 	SecretPrefix string `mapstructure:"secret_prefix"` // kube only
 	RenewBefore  string `mapstructure:"renew_before"`
+	Dir          string `mapstructure:"dir"`           // file only — directory to store certs (default ".certs")
 	VaultAddress string `mapstructure:"vault_address"` // vault only
 	VaultToken   string `mapstructure:"vault_token"`   // vault only
 	VaultMount   string `mapstructure:"vault_mount"`   // vault only
@@ -45,10 +51,11 @@ type ReconcileConfig struct {
 }
 
 type DatasourceConfig struct {
-	Provider   string `mapstructure:"provider"` // "mongodb"
+	Provider   string `mapstructure:"provider"` // "mongodb" or "http"
 	URI        string `mapstructure:"uri"`
 	Database   string `mapstructure:"database"`
 	Collection string `mapstructure:"collection"`
+	ListenAddr string `mapstructure:"listen_addr"` // http only — address for the HTTP source API (default ":8081")
 }
 
 type CertificateConfig struct {
@@ -66,7 +73,7 @@ type CertificateConfig struct {
 }
 
 type ProvisionerConfig struct {
-	Provider           string `mapstructure:"provider"` // "netscaler"
+	Provider           string `mapstructure:"provider"` // "netscaler" or "log"
 	Endpoint           string `mapstructure:"endpoint"`
 	Username           string `mapstructure:"username"`
 	Password           string `mapstructure:"password"`
@@ -80,8 +87,10 @@ func Load(path string) (*Config, error) {
 	v := viper.New()
 
 	// Defaults.
+	v.SetDefault("log.format", "json")
 	v.SetDefault("datasource.provider", "mongodb")
 	v.SetDefault("datasource.collection", "routes")
+	v.SetDefault("datasource.listen_addr", ":8081")
 	v.SetDefault("certificate.provider", "acme-http")
 	v.SetDefault("certificate.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
 	v.SetDefault("certificate.challenge_port", 80)
@@ -94,6 +103,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("certificate_store.namespace", "default")
 	v.SetDefault("certificate_store.secret_prefix", "route-tls")
 	v.SetDefault("certificate_store.renew_before", "720h")
+	v.SetDefault("certificate_store.dir", ".certs")
 	v.SetDefault("certificate_store.vault_mount", "secret")
 	v.SetDefault("certificate_store.vault_prefix", "route-tls")
 	v.SetDefault("provisioner.provider", "netscaler")
@@ -139,14 +149,28 @@ func ConfigPath(defaultPath string) string {
 }
 
 func validate(c *Config) error {
-	if c.Datasource.URI == "" {
-		return fmt.Errorf("datasource.uri is required (or set ROUTES_DATASOURCE_URI)")
+	switch c.Datasource.Provider {
+	case "mongodb":
+		if c.Datasource.URI == "" {
+			return fmt.Errorf("datasource.uri is required (or set ROUTES_DATASOURCE_URI)")
+		}
+		if c.Datasource.Database == "" {
+			return fmt.Errorf("datasource.database is required (or set ROUTES_DATASOURCE_DATABASE)")
+		}
+	case "http":
+		// No extra validation needed — listen_addr has a default.
+	default:
+		return fmt.Errorf("datasource.provider must be 'mongodb' or 'http' (or set ROUTES_DATASOURCE_PROVIDER)")
 	}
-	if c.Datasource.Database == "" {
-		return fmt.Errorf("datasource.database is required (or set ROUTES_DATASOURCE_DATABASE)")
-	}
-	if c.Provisioner.Endpoint == "" {
-		return fmt.Errorf("provisioner.endpoint is required (or set ROUTES_PROVISIONER_ENDPOINT)")
+	switch c.Provisioner.Provider {
+	case "netscaler":
+		if c.Provisioner.Endpoint == "" {
+			return fmt.Errorf("provisioner.endpoint is required (or set ROUTES_PROVISIONER_ENDPOINT)")
+		}
+	case "log":
+		// No validation needed.
+	default:
+		return fmt.Errorf("provisioner.provider must be 'netscaler' or 'log' (or set ROUTES_PROVISIONER_PROVIDER)")
 	}
 	switch c.Certificate.Provider {
 	case "acme-http", "acme-dns", "selfsigned", "vault":
@@ -155,9 +179,9 @@ func validate(c *Config) error {
 	}
 	if c.CertificateStore.Enabled {
 		switch c.CertificateStore.Provider {
-		case "kube", "vault":
+		case "kube", "vault", "file":
 		default:
-			return fmt.Errorf("certificate_store.provider must be 'kube' or 'vault' (or set ROUTES_CERTIFICATE_STORE_PROVIDER)")
+			return fmt.Errorf("certificate_store.provider must be 'kube', 'vault', or 'file' (or set ROUTES_CERTIFICATE_STORE_PROVIDER)")
 		}
 	}
 	if c.LeaderElection.Enabled {

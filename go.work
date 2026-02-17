@@ -7,10 +7,13 @@ use (
 	./impl/cert-acme-http
 	./impl/cert-selfsigned
 	./impl/cert-vault
+	./impl/certstore-file
 	./impl/certstore-kube
 	./impl/certstore-vault
 	./impl/lease-kube
 	./impl/lease-mongo
+	./impl/provisioner-log
 	./impl/provisioner-netscaler
+	./impl/source-http
 	./impl/source-mongo
 )

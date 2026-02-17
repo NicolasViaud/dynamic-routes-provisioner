@@ -1,0 +1,26 @@
+log:
+  format: "text"                 # human-readable output (default "json")
+
+datasource:
+  provider: "http"
+  listen_addr: ":8081"      # Swagger UI at http://localhost:8081/swagger
+
+certificate:
+  provider: "selfsigned"
+  validity: "8760h"
+  organization: "Test"
+
+certificate_store:
+  enabled: true
+  provider: "file"               # caches certs to local filesystem
+  dir: ".certs"                  # directory for cached certs
+  renew_before: "0s"
+
+provisioner:
+  provider: "log"                # logs every operation to console (no real gateway needed)
+
+reconcile:
+  interval: "1m"
+
+leader_election:
+  enabled: false
