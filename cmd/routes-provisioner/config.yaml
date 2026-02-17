@@ -2,16 +2,36 @@ datasource:
   provider: "mongodb"                   # ROUTES_DATASOURCE_PROVIDER — "mongodb" or "http"
   uri: "mongodb://localhost:27017"      # ROUTES_DATASOURCE_URI
   database: "mydb"                      # ROUTES_DATASOURCE_DATABASE
-  collection: "routes"                  # ROUTES_DATASOURCE_COLLECTION
-  # --- mongodb mapper settings ---
-  mapper:
-    url_field: "url"                     # ROUTES_DATASOURCE_MAPPER_URL_FIELD — document field containing the URL
-    path: "/"                            # ROUTES_DATASOURCE_MAPPER_PATH — default route path
-    tls: true                            # ROUTES_DATASOURCE_MAPPER_TLS — enable TLS for routes
-    backends:                            # fixed backends applied to every route
-      - service_name: "app-svc"
-        port: 8080
-        weight: 100
+  # --- multiple collections, each with its own mapper and backends ---
+  collections:
+    - collection: "websites"
+      mapper:
+        url_field: "url"
+        path: "/"
+        tls: true
+        backends:
+          - service_name: "web-svc"
+            port: 8080
+            weight: 100
+    - collection: "apis"
+      mapper:
+        url_field: "endpoint"
+        path: "/api"
+        tls: true
+        backends:
+          - service_name: "api-svc"
+            port: 3000
+            weight: 100
+  # --- legacy single collection format (still supported) ---
+  # collection: "routes"
+  # mapper:
+  #   url_field: "url"
+  #   path: "/"
+  #   tls: true
+  #   backends:
+  #     - service_name: "app-svc"
+  #       port: 8080
+  #       weight: 100
 
 certificate:
   provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"

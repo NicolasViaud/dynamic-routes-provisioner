@@ -51,12 +51,19 @@ type ReconcileConfig struct {
 }
 
 type DatasourceConfig struct {
-	Provider   string       `mapstructure:"provider"` // "mongodb" or "http"
-	URI        string       `mapstructure:"uri"`
-	Database   string       `mapstructure:"database"`
+	Provider    string             `mapstructure:"provider"` // "mongodb" or "http"
+	URI         string             `mapstructure:"uri"`
+	Database    string             `mapstructure:"database"`
+	Collection  string             `mapstructure:"collection"`  // single collection (legacy, still supported)
+	Collections []CollectionConfig `mapstructure:"collections"` // multiple collections, each with its own mapper
+	ListenAddr  string             `mapstructure:"listen_addr"` // http only — address for the HTTP source API (default ":8081")
+	Mapper      MapperConfig       `mapstructure:"mapper"`      // mongodb only — document-to-route mapping (legacy, used with single collection)
+}
+
+// CollectionConfig defines a MongoDB collection and its mapper configuration.
+type CollectionConfig struct {
 	Collection string       `mapstructure:"collection"`
-	ListenAddr string       `mapstructure:"listen_addr"` // http only — address for the HTTP source API (default ":8081")
-	Mapper     MapperConfig `mapstructure:"mapper"`      // mongodb only — document-to-route mapping
+	Mapper     MapperConfig `mapstructure:"mapper"`
 }
 
 type MapperConfig struct {
@@ -171,6 +178,22 @@ func ConfigPath(defaultPath string) string {
 	return defaultPath
 }
 
+// MongoCollections returns the effective list of collection configs.
+// If the new "collections" array is set, it is returned directly.
+// Otherwise, the legacy single "collection" + "mapper" fields are wrapped
+// into a one-element slice for backwards compatibility.
+func (d *DatasourceConfig) MongoCollections() []CollectionConfig {
+	if len(d.Collections) > 0 {
+		return d.Collections
+	}
+	return []CollectionConfig{
+		{
+			Collection: d.Collection,
+			Mapper:     d.Mapper,
+		},
+	}
+}
+
 func validate(c *Config) error {
 	switch c.Datasource.Provider {
 	case "mongodb":
@@ -179,6 +202,12 @@ func validate(c *Config) error {
 		}
 		if c.Datasource.Database == "" {
 			return fmt.Errorf("datasource.database is required (or set ROUTES_DATASOURCE_DATABASE)")
+		}
+		cols := c.Datasource.MongoCollections()
+		for i, col := range cols {
+			if col.Collection == "" {
+				return fmt.Errorf("datasource.collections[%d].collection is required", i)
+			}
 		}
 	case "http":
 		// No extra validation needed — listen_addr has a default.

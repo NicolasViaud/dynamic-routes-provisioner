@@ -86,23 +86,38 @@ func main() {
 		}
 		defer mongoClient.Disconnect(ctx)
 
-		collection := mongoClient.Database(cfg.Datasource.Database).Collection(cfg.Datasource.Collection)
-		backends := make([]core.Backend, len(cfg.Datasource.Mapper.Backends))
-		for i, b := range cfg.Datasource.Mapper.Backends {
-			backends[i] = core.Backend{
-				ServiceName: b.ServiceName,
-				Port:        b.Port,
-				Weight:      b.Weight,
+		cols := cfg.Datasource.MongoCollections()
+		var triggers []trigger.Trigger
+		var desiredProviders []desired.DesiredStateProvider
+
+		for _, colCfg := range cols {
+			col := mongoClient.Database(cfg.Datasource.Database).Collection(colCfg.Collection)
+			backends := make([]core.Backend, len(colCfg.Mapper.Backends))
+			for i, b := range colCfg.Mapper.Backends {
+				backends[i] = core.Backend{
+					ServiceName: b.ServiceName,
+					Port:        b.Port,
+					Weight:      b.Weight,
+				}
 			}
+			mapper := &source.MongoMapper{
+				URLField: colCfg.Mapper.URLField,
+				Path:     colCfg.Mapper.Path,
+				TLS:      colCfg.Mapper.TLS,
+				Backends: backends,
+			}
+			triggers = append(triggers, sourcemongo.New(col, mapper))
+			desiredProviders = append(desiredProviders, sourcemongo.NewDesiredState(col, mapper))
+			logger.Info("mongodb collection configured", "collection", colCfg.Collection)
 		}
-		mapper := &source.MongoMapper{
-			URLField: cfg.Datasource.Mapper.URLField,
-			Path:     cfg.Datasource.Mapper.Path,
-			TLS:      cfg.Datasource.Mapper.TLS,
-			Backends: backends,
+
+		if len(triggers) == 1 {
+			trig = triggers[0]
+			desiredState = desiredProviders[0]
+		} else {
+			trig = trigger.NewComposite(triggers...)
+			desiredState = desired.NewComposite(desiredProviders...)
 		}
-		trig = sourcemongo.New(collection, mapper)
-		desiredState = sourcemongo.NewDesiredState(collection, mapper)
 
 	case "http":
 		httpSource := sourcehttp.New(logger.With("component", "source-http"))
