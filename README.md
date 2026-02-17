@@ -2,9 +2,7 @@
 
 ## Why Dynamic Route Provisioner?
 
-The traditional Kubernetes approach — cert-manager + HTTPRoute CRDs + an ingress controller — routes every change through the Kubernetes API server and etcd.
-
-For **N routes**, this creates at least **3N Kubernetes objects** (HTTPRoute + Certificate + Secret), each written to etcd and watched by multiple controllers. Two independent reconciliation loops (cert-manager and the ingress controller) coordinate implicitly by waiting on each other's resources.
+The traditional Kubernetes routing stack (cert-manager + HTTPRoute/Ingress + ingress controller) creates at least **3N objects** for N routes, each written to etcd and watched by multiple controllers. This works for static configurations but becomes a bottleneck when routes are dynamic — driven by user actions, tenant onboarding, or application data.
 
 Dynamic Route Provisioner replaces this with a **single direct pipeline**: a change in the application database triggers certificate issuance and gateway provisioning in one process, with no intermediate custom resources.
 
@@ -43,10 +41,10 @@ Go workspace monorepo: `core/` for interfaces, `impl/` for implementations, `cmd
 |---|---|
 | `core/` | Interfaces and domain model — no external dependencies |
 | `core/route.go` | `RouteRequest`, `Certificate`, `RouteEvent`, ... |
-| `core/trigger/` | `Trigger` interface |
+| `core/trigger/` | `Trigger` interface + `CompositeTrigger` (fans-in multiple triggers) |
 | `core/certificate/` | `Issuer` interface |
 | `core/provisioner/` | `RouteProvisioner` interface (incl. `List`, `BatchProvision`, `BatchDeprovision`) |
-| `core/desired/` | `DesiredStateProvider` interface |
+| `core/desired/` | `DesiredStateProvider` interface + `CompositeDesiredState` (merges multiple providers) |
 | `core/reconciler/` | Reconciler — compares desired vs actual, batch-applies diff |
 | `core/lease/` | `LeaderElector` interface |
 | `core/orchestrator/` | Orchestrator — pipeline coordinator |
@@ -73,13 +71,15 @@ Go workspace monorepo: `core/` for interfaces, `impl/` for implementations, `cmd
 
 ## Use cases
 
-### Maximum scalability and security — bypass the Kubernetes API entirely
+### Maximum scalability — bypass the Kubernetes API entirely
 
 Best for environments where the number of routes is large and the Kubernetes API server / etcd should not be in the hot path. The application database (MongoDB) is the single source of truth, certificates are issued by Vault PKI and cached in Vault KV v2, and routes are provisioned directly on a Netscaler CPX via its Nitro API.
 
 **Pipeline:** MongoDB change stream &rarr; Vault PKI issuer &rarr; Vault KV v2 cache &rarr; Netscaler Nitro API
 
 No Kubernetes objects are created or watched during normal operation. Leader election can use MongoDB-based leases to stay off the API server entirely. This configuration scales independently of cluster size and avoids etcd write amplification.
+
+Multiple collections are supported — each collection gets its own mapper and backends, and the triggers and desired state providers are automatically composed into a single pipeline.
 
 **Example configuration:**
 
@@ -88,15 +88,25 @@ datasource:
   provider: "mongodb"
   uri: "mongodb://mongo:27017"
   database: "mydb"
-  collection: "routes"
-  mapper:
-    url_field: "url"
-    path: "/"
-    tls: true
-    backends:
-      - service_name: "app-svc"
-        port: 8080
-        weight: 100
+  collections:
+    - collection: "websites"
+      mapper:
+        url_field: "url"
+        path: "/"
+        tls: true
+        backends:
+          - service_name: "web-svc"
+            port: 8080
+            weight: 100
+    - collection: "apis"
+      mapper:
+        url_field: "endpoint"
+        path: "/api"
+        tls: true
+        backends:
+          - service_name: "api-svc"
+            port: 3000
+            weight: 100
 
 certificate:
   provider: "vault"
@@ -146,15 +156,16 @@ datasource:
   provider: "mongodb"
   uri: "mongodb://mongo:27017"
   database: "mydb"
-  collection: "routes"
-  mapper:
-    url_field: "url"
-    path: "/"
-    tls: true
-    backends:
-      - service_name: "app-svc"
-        port: 8080
-        weight: 100
+  collections:
+    - collection: "routes"
+      mapper:
+        url_field: "url"
+        path: "/"
+        tls: true
+        backends:
+          - service_name: "app-svc"
+            port: 8080
+            weight: 100
 
 certificate:
   provider: "selfsigned"            # placeholder — cert-manager handles real issuance
@@ -194,15 +205,16 @@ datasource:
   provider: "mongodb"
   uri: "mongodb://mongo:27017"
   database: "mydb"
-  collection: "routes"
-  mapper:
-    url_field: "url"
-    path: "/"
-    tls: true
-    backends:
-      - service_name: "app-svc"
-        port: 8080
-        weight: 100
+  collections:
+    - collection: "routes"
+      mapper:
+        url_field: "url"
+        path: "/"
+        tls: true
+        backends:
+          - service_name: "app-svc"
+            port: 8080
+            weight: 100
 
 certificate:
   provider: "vault"
