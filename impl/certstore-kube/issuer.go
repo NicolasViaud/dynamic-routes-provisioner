@@ -103,6 +103,13 @@ func (c *CachingIssuer) Revoke(ctx context.Context, cert core.Certificate) error
 	return c.inner.Revoke(ctx, cert)
 }
 
+// SecretNameFunc returns a function that derives the Kubernetes Secret name
+// for a given hostname. This allows other components (e.g. the ingress
+// provisioner) to reference the same Secret names without duplicating logic.
+func (c *CachingIssuer) SecretNameFunc() func(host string) string {
+	return c.secretName
+}
+
 // secretName converts a hostname into a valid Kubernetes Secret name.
 func (c *CachingIssuer) secretName(host string) string {
 	safe := strings.NewReplacer(".", "-", "*", "wildcard").Replace(host)

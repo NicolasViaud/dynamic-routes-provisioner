@@ -87,11 +87,15 @@ type CertificateConfig struct {
 }
 
 type ProvisionerConfig struct {
-	Provider           string `mapstructure:"provider"` // "netscaler" or "log"
+	Provider           string `mapstructure:"provider"` // "netscaler", "ingress", or "log"
 	Endpoint           string `mapstructure:"endpoint"`
 	Username           string `mapstructure:"username"`
 	Password           string `mapstructure:"password"`
 	InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify"`
+	// --- ingress only ---
+	Namespace           string `mapstructure:"namespace"`              // K8s namespace for Ingress resources
+	MaxRoutesPerIngress int    `mapstructure:"max_routes_per_ingress"` // max rules per Ingress bucket
+	IngressClass        string `mapstructure:"ingress_class"`          // IngressClassName (empty for default)
 }
 
 // Load reads the YAML config file then applies environment variable overrides.
@@ -124,6 +128,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("certificate_store.vault_mount", "secret")
 	v.SetDefault("certificate_store.vault_prefix", "route-tls")
 	v.SetDefault("provisioner.provider", "netscaler")
+	v.SetDefault("provisioner.namespace", "default")
+	v.SetDefault("provisioner.max_routes_per_ingress", 50)
 	v.SetDefault("reconcile.interval", "5m")
 	v.SetDefault("leader_election.enabled", false)
 	v.SetDefault("leader_election.provider", "kube")
@@ -184,10 +190,12 @@ func validate(c *Config) error {
 		if c.Provisioner.Endpoint == "" {
 			return fmt.Errorf("provisioner.endpoint is required (or set ROUTES_PROVISIONER_ENDPOINT)")
 		}
+	case "ingress":
+		// Namespace has a default; no extra validation needed.
 	case "log":
 		// No validation needed.
 	default:
-		return fmt.Errorf("provisioner.provider must be 'netscaler' or 'log' (or set ROUTES_PROVISIONER_PROVIDER)")
+		return fmt.Errorf("provisioner.provider must be 'netscaler', 'ingress', or 'log' (or set ROUTES_PROVISIONER_PROVIDER)")
 	}
 	switch c.Certificate.Provider {
 	case "acme-http", "acme-dns", "selfsigned", "vault":

@@ -12,6 +12,7 @@ use (
 	./impl/certstore-vault
 	./impl/lease-kube
 	./impl/lease-mongo
+	./impl/provisioner-ingress
 	./impl/provisioner-log
 	./impl/provisioner-netscaler
 	./impl/source-http

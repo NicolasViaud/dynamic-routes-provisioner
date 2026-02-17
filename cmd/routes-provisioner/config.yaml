@@ -45,11 +45,16 @@ certificate_store:
   # vault_prefix: "route-tls"               # ROUTES_CERTIFICATE_STORE_VAULT_PREFIX — path prefix in KV
 
 provisioner:
-  provider: "netscaler"                 # ROUTES_PROVISIONER_PROVIDER — "netscaler" or "log"
+  provider: "netscaler"                 # ROUTES_PROVISIONER_PROVIDER — "netscaler", "ingress", or "log"
+  # --- netscaler only ---
   endpoint: "https://10.0.0.1"         # ROUTES_PROVISIONER_ENDPOINT
   username: "nsroot"                    # ROUTES_PROVISIONER_USERNAME
   password: "secret"                    # ROUTES_PROVISIONER_PASSWORD
   insecure_skip_verify: true            # ROUTES_PROVISIONER_INSECURE_SKIP_VERIFY
+  # --- ingress only ---
+  # namespace: "default"                  # ROUTES_PROVISIONER_NAMESPACE — K8s namespace for Ingress resources
+  # max_routes_per_ingress: 50            # ROUTES_PROVISIONER_MAX_ROUTES_PER_INGRESS — max rules per Ingress bucket
+  # ingress_class: "nginx"                # ROUTES_PROVISIONER_INGRESS_CLASS — IngressClassName (empty for default)
 
 reconcile:
   interval: "5m"  # ROUTES_RECONCILE_INTERVAL — how often to reconcile desired vs actual state

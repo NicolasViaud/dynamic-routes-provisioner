@@ -29,6 +29,7 @@ import (
 	corelease "github.com/NicolasViaud/dynamic-route-provisioner/core/lease"
 	leasekube "github.com/NicolasViaud/dynamic-route-provisioner/lease-kube"
 	leasemongo "github.com/NicolasViaud/dynamic-route-provisioner/lease-mongo"
+	provingress "github.com/NicolasViaud/dynamic-route-provisioner/provisioner-ingress"
 	provlog "github.com/NicolasViaud/dynamic-route-provisioner/provisioner-log"
 	provnetscaler "github.com/NicolasViaud/dynamic-route-provisioner/provisioner-netscaler"
 	sourcehttp "github.com/NicolasViaud/dynamic-route-provisioner/source-http"
@@ -191,7 +192,7 @@ func main() {
 	logger.Info("certificate issuer configured", "provider", cfg.Certificate.Provider)
 
 	// --- Kubernetes clientset (shared by certificate store and kube leader election) ---
-	needsKube := (cfg.CertificateStore.Enabled && cfg.CertificateStore.Provider == "kube") || (cfg.LeaderElection.Enabled && cfg.LeaderElection.Provider == "kube")
+	needsKube := (cfg.CertificateStore.Enabled && cfg.CertificateStore.Provider == "kube") || (cfg.LeaderElection.Enabled && cfg.LeaderElection.Provider == "kube") || cfg.Provisioner.Provider == "ingress"
 	var clientset kubernetes.Interface
 	if needsKube {
 		kubeConfig, err := rest.InClusterConfig()
@@ -207,6 +208,7 @@ func main() {
 	}
 
 	// --- Certificate store (caching decorator) ---
+	var kubeSecretNameFunc func(string) string // set when certstore-kube is used
 	if cfg.CertificateStore.Enabled {
 		renewBefore, err := time.ParseDuration(cfg.CertificateStore.RenewBefore)
 		if err != nil {
@@ -216,11 +218,13 @@ func main() {
 
 		switch cfg.CertificateStore.Provider {
 		case "kube":
-			issuer = certstorekube.New(issuer, clientset, logger.With("component", "certstore-kube"),
+			kubeStore := certstorekube.New(issuer, clientset, logger.With("component", "certstore-kube"),
 				certstorekube.WithNamespace(cfg.CertificateStore.Namespace),
 				certstorekube.WithSecretPrefix(cfg.CertificateStore.SecretPrefix),
 				certstorekube.WithRenewBefore(renewBefore),
 			)
+			kubeSecretNameFunc = kubeStore.SecretNameFunc()
+			issuer = kubeStore
 		case "vault":
 			storeOpts := []certstorevault.Option{
 				certstorevault.WithRenewBefore(renewBefore),
@@ -264,6 +268,26 @@ func main() {
 			netscalerOpts = append(netscalerOpts, provnetscaler.WithInsecureSkipVerify())
 		}
 		prov = provnetscaler.New(&provisioner.NetscalerMapper{}, netscalerOpts...)
+	case "ingress":
+		secretNameFunc := kubeSecretNameFunc
+		if secretNameFunc == nil {
+			logger.Info("certstore-kube not enabled, using default TLS secret naming convention (tls-<hostname>)")
+			secretNameFunc = provisioner.DefaultSecretName
+		}
+		ingressMapper := &provisioner.IngressMapper{
+			SecretNameFunc:   secretNameFunc,
+			IngressClassName: cfg.Provisioner.IngressClass,
+		}
+		ingressOpts := []provingress.Option{
+			provingress.WithNamespace(cfg.Provisioner.Namespace),
+			provingress.WithMaxRoutesPerIngress(cfg.Provisioner.MaxRoutesPerIngress),
+			provingress.WithKubeClient(clientset),
+		}
+		prov, err = provingress.New(ingressMapper, logger.With("component", "provisioner-ingress"), ingressOpts...)
+		if err != nil {
+			logger.Error("failed to create ingress provisioner", "error", err)
+			os.Exit(1)
+		}
 	case "log":
 		prov = provlog.New(logger.With("component", "provisioner-log"))
 	}

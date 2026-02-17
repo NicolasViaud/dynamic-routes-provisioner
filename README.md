@@ -2,33 +2,23 @@
 
 ## Why Dynamic Route Provisioner?
 
-The traditional Kubernetes approach — cert-manager + HTTPRoute CRDs + an ingress controller — routes every change through the Kubernetes API server and etcd:
-
-```
-App DB change → create HTTPRoute CR  → etcd write → controller watch
-             → create Certificate CR → etcd write → cert-manager watch → issue cert → write Secret → etcd write
-             → ingress controller watches Secret + HTTPRoute → configure gateway
-```
+The traditional Kubernetes approach — cert-manager + HTTPRoute CRDs + an ingress controller — routes every change through the Kubernetes API server and etcd.
 
 For **N routes**, this creates at least **3N Kubernetes objects** (HTTPRoute + Certificate + Secret), each written to etcd and watched by multiple controllers. Two independent reconciliation loops (cert-manager and the ingress controller) coordinate implicitly by waiting on each other's resources.
 
-Dynamic Route Provisioner replaces this with a **single direct pipeline**:
-
-```
-MongoDB change stream → Orchestrator → issue cert → provision gateway
-```
+Dynamic Route Provisioner replaces this with a **single direct pipeline**: a change in the application database triggers certificate issuance and gateway provisioning in one process, with no intermediate custom resources.
 
 ### No etcd bottleneck
 
-etcd has hard throughput limits. Every route in the traditional stack generates multiple etcd writes and watch notifications fanning out to controllers. This project bypasses the Kubernetes API server entirely — the source of truth is your application database (e.g. MongoDB), which you already scale independently. Leader election uses MongoDB TTL documents or Kubernetes Lease API directly, with no etcd coordination overhead.
+etcd has hard throughput limits. Every route in the traditional stack generates multiple etcd writes and watch notifications fanning out to controllers. This project can bypass the Kubernetes API server entirely — the source of truth is your application database (e.g. MongoDB), which you already scale independently.
 
 ### No API server pressure
 
-The traditional stack puts constant load on the Kubernetes API server: cert-manager and the ingress controller each maintain long-lived watches, list resources on resync, and write back status updates. At scale, this competes with every other controller and operator in the cluster for API server capacity. Dynamic Route Provisioner talks directly to MongoDB and the gateway API — the Kubernetes API server is not in the hot path at all, freeing up cluster resources for workloads that actually need them.
+The traditional stack puts constant load on the Kubernetes API server: cert-manager and the ingress controller each maintain long-lived watches, list resources on resync, and write back status updates. At scale, this competes with every other controller and operator in the cluster for API server capacity. Dynamic Route Provisioner can talk directly to MongoDB and the gateway API — the Kubernetes API server is not in the hot path at all, freeing up cluster resources for workloads that actually need them.
 
 ### Single pipeline, no controller coordination
 
-cert-manager and the ingress controller are two separate reconciliation loops. The ingress controller must wait for cert-manager to write a Secret before it can act — added latency on every route. Here, certificate issuance and gateway provisioning happen sequentially in one process: change stream event → cert issued → route provisioned. No intermediate CRs, no watch propagation delay, no polling for another controller's output. Drift correction uses `BatchProvision` / `BatchDeprovision` to fix multiple routes in a single gateway API call, instead of per-resource reconciliation.
+cert-manager and the ingress controller are two separate reconciliation loops. The ingress controller must wait for cert-manager to write a Secret before it can act — added latency on every route. Here, certificate issuance and gateway provisioning happen sequentially in one process: change stream event, cert issued, route provisioned. No intermediate CRs, no watch propagation delay, no polling for another controller's output. Drift correction uses batch operations to fix multiple routes in a single gateway API call, instead of per-resource reconciliation.
 
 ### Pluggable certificate storage
 
@@ -36,18 +26,10 @@ cert-manager is hardwired to Kubernetes Secrets — private keys and certificate
 
 ## How it works
 
-```
-Trigger → Certificate Store (cache) → Certificate Issuer → Route Provisioner
-                   ↑                          ↑                     ↑
-             Reconciler (periodic diff + batch apply)
-                   ↑
-         Leader Election (HA — only one instance active)
-```
-
 1. **Trigger** detects a new route is needed (e.g. a document appears in MongoDB)
 2. **Certificate Store** checks for a cached, still-valid certificate (K8s Secrets or Vault KV v2) — avoids unnecessary reissuance after gateway restarts or ACME rate limits
 3. **Certificate Issuer** obtains a TLS certificate for the hostname if not cached (e.g. ACME HTTP-01, Vault PKI)
-4. **Route Provisioner** creates the route on the target gateway (e.g. Netscaler CPX via Nitro API)
+4. **Route Provisioner** creates the route on the target gateway (e.g. Netscaler CPX via Nitro API, Kubernetes Ingress)
 5. **Reconciler** periodically compares desired state (source of truth) vs actual state (gateway), computes the diff, and batch-applies it — handles drift and gateway restarts
 6. **Leader Election** ensures only one instance processes events and reconciliation at a time (HA with automatic failover)
 
@@ -57,167 +39,105 @@ The **Orchestrator** wires these components, runs the event loop, and manages th
 
 Go workspace monorepo: `core/` for interfaces, `impl/` for implementations, `cmd/` for runnable apps.
 
-```
-dynamic-route-provisioner/
-├── go.work
-├── core/                              # Interfaces + domain model
-│   ├── route.go                       # RouteRequest, Certificate, RouteEvent, ...
-│   ├── trigger/                       # trigger.Trigger
-│   ├── certificate/                   # certificate.Issuer
-│   ├── provisioner/                   # provisioner.RouteProvisioner (incl. List, Batch*)
-│   ├── desired/                       # desired.DesiredStateProvider
-│   ├── reconciler/                    # Reconciler (diff + batch apply)
-│   ├── lease/                         # lease.LeaderElector
-│   └── orchestrator/                  # Orchestrator (pipeline coordinator)
-├── impl/
-│   ├── source-mongo/                  # MongoDB change stream trigger + desired state
-│   ├── cert-acme-dns/                 # ACME DNS-01 certificate issuer
-│   ├── cert-acme-http/                # ACME HTTP-01 certificate issuer
-│   ├── cert-selfsigned/               # Self-signed certificate issuer (testing)
-│   ├── cert-vault/                    # HashiCorp Vault PKI certificate issuer
-│   ├── certstore-kube/                # Certificate store — Kubernetes TLS Secrets
-│   ├── certstore-vault/               # Certificate store — Vault KV v2
-│   ├── provisioner-netscaler/         # Netscaler CPX (Nitro API) provisioner
-│   ├── lease-mongo/                   # MongoDB-based leader election
-│   └── lease-kube/                    # Kubernetes Lease API leader election
-└── cmd/
-    └── routes-provisioner/               # Concrete use-case application
-        ├── main.go                    # Entrypoint
-        ├── internal/                  # Config, mappers, challenge server
-        └── config.yaml                # Example configuration
-```
-
-## Core interfaces
-
-```go
-type Trigger interface {
-    Start(ctx context.Context, events chan<- core.RouteEvent) error
-    Name() string
-}
-
-type Issuer interface {
-    Issue(ctx context.Context, req core.RouteRequest) (*core.Certificate, error)
-    Revoke(ctx context.Context, cert core.Certificate) error
-    Name() string
-}
-
-type RouteProvisioner interface {
-    Provision(ctx, req, cert) (*core.ProvisionedRoute, error)
-    Deprovision(ctx, routeID) error
-    List(ctx) ([]core.ProvisionedRoute, error)
-    BatchProvision(ctx, routes, certs) ([]core.ProvisionedRoute, error)
-    BatchDeprovision(ctx, routeIDs) error
-    Name() string
-}
-
-type DesiredStateProvider interface {
-    List(ctx context.Context) ([]core.RouteRequest, error)
-    Name() string
-}
-
-type LeaderElector interface {
-    Run(ctx context.Context, callbacks LeaderCallbacks) error
-    IsLeader() bool
-    Name() string
-}
-```
+| Directory | Purpose |
+|---|---|
+| `core/` | Interfaces and domain model — no external dependencies |
+| `core/route.go` | `RouteRequest`, `Certificate`, `RouteEvent`, ... |
+| `core/trigger/` | `Trigger` interface |
+| `core/certificate/` | `Issuer` interface |
+| `core/provisioner/` | `RouteProvisioner` interface (incl. `List`, `BatchProvision`, `BatchDeprovision`) |
+| `core/desired/` | `DesiredStateProvider` interface |
+| `core/reconciler/` | Reconciler — compares desired vs actual, batch-applies diff |
+| `core/lease/` | `LeaderElector` interface |
+| `core/orchestrator/` | Orchestrator — pipeline coordinator |
+| `impl/` | Implementation modules (each its own Go module) |
+| `cmd/routes-provisioner/` | Concrete use-case application with Viper-based config |
 
 ## Available implementations
 
 | Module | Interface | Extension point | Description |
 |---|---|---|---|
 | `source-mongo` | `Trigger` + `DesiredStateProvider` | `DocumentMapper` | MongoDB change streams + full collection listing for reconciliation |
+| `source-http` | `Trigger` + `DesiredStateProvider` | — | HTTP API trigger with Swagger documentation |
 | `cert-acme-dns` | `Issuer` | `DNSProvider` | ACME DNS-01 challenges (supports wildcards) |
 | `cert-acme-http` | `Issuer` | `ChallengeSolver` | ACME HTTP-01 challenges |
 | `cert-selfsigned` | `Issuer` | — | Self-signed certificates for testing/development |
 | `cert-vault` | `Issuer` | — | HashiCorp Vault PKI secrets engine (role-based issuance) |
 | `certstore-kube` | `Issuer` (decorator) | — | Caches certificates as Kubernetes TLS Secrets |
 | `certstore-vault` | `Issuer` (decorator) | — | Caches certificates in Vault KV v2 |
+| `certstore-file` | `Issuer` (decorator) | — | Caches certificates on the local filesystem |
 | `provisioner-netscaler` | `RouteProvisioner` | `ResourceMapper` | Netscaler CPX via Nitro REST API (incl. batch and list) |
+| `provisioner-ingress` | `RouteProvisioner` | `IngressMapper` | Kubernetes Ingress resources with configurable packing |
 | `lease-mongo` | `LeaderElector` | — | MongoDB document-based leader election with TTL |
 | `lease-kube` | `LeaderElector` | — | Kubernetes coordination/v1 Lease API |
 
-## Routes Provisioner (use-case app)
+## Use cases
 
-Watches a MongoDB collection for documents with a `url` field, issues ACME certificates, and configures a Netscaler CPX gateway. Supports state reconciliation and leader election for HA deployments.
+### Maximum scalability and security — bypass the Kubernetes API entirely
 
-### Configuration
+Best for environments where the number of routes is large and the Kubernetes API server / etcd should not be in the hot path. The application database (MongoDB) is the single source of truth, certificates are issued by Vault PKI and cached in Vault KV v2, and routes are provisioned directly on a Netscaler CPX via its Nitro API.
 
-YAML base config with environment variable overrides (via [Viper](https://github.com/spf13/viper)). Env vars use the `ROUTES_` prefix:
+**Pipeline:** MongoDB change stream &rarr; Vault PKI issuer &rarr; Vault KV v2 cache &rarr; Netscaler Nitro API
 
-```yaml
-datasource:
-  provider: "mongodb"                    # ROUTES_DATASOURCE_PROVIDER
-  uri: "mongodb://localhost:27017"       # ROUTES_DATASOURCE_URI
-  database: "mydb"                       # ROUTES_DATASOURCE_DATABASE
-  collection: "routes"               # ROUTES_DATASOURCE_COLLECTION
+No Kubernetes objects are created or watched during normal operation. Leader election can use MongoDB-based leases to stay off the API server entirely. This configuration scales independently of cluster size and avoids etcd write amplification.
 
-certificate:
-  provider: "selfsigned"                 # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"
-  email: "admin@example.com"             # ROUTES_CERTIFICATE_EMAIL (acme-http/acme-dns)
-  directory_url: "https://acme-..."      # ROUTES_CERTIFICATE_DIRECTORY_URL (acme-http/acme-dns)
-  challenge_port: 80                     # ROUTES_CERTIFICATE_CHALLENGE_PORT (acme-http only)
-  validity: "8760h"                      # ROUTES_CERTIFICATE_VALIDITY (selfsigned only)
-  organization: "Self-Signed"            # ROUTES_CERTIFICATE_ORGANIZATION (selfsigned only)
-  # vault_address: "http://vault:8200"   # ROUTES_CERTIFICATE_VAULT_ADDRESS (vault only)
-  # vault_role: "my-role"                # ROUTES_CERTIFICATE_VAULT_ROLE (vault only)
+**Key configuration:**
 
-certificate_store:
-  enabled: false                         # ROUTES_CERTIFICATE_STORE_ENABLED
-  provider: "kube"                       # ROUTES_CERTIFICATE_STORE_PROVIDER — "kube" or "vault"
-  namespace: "default"                   # ROUTES_CERTIFICATE_STORE_NAMESPACE (kube only)
-  secret_prefix: "route-tls"            # ROUTES_CERTIFICATE_STORE_SECRET_PREFIX (kube only)
-  renew_before: "720h"                   # ROUTES_CERTIFICATE_STORE_RENEW_BEFORE — re-issue 30 days before expiry
+| Setting | Value | Why |
+|---|---|---|
+| `datasource.provider` | `mongodb` | Change stream trigger + desired state from the app database |
+| `certificate.provider` | `vault` | Vault PKI issues certs — no ACME rate limits, sub-second issuance |
+| `certificate_store.provider` | `vault` | Certs cached in Vault KV v2 — no etcd writes, audit logging, access policies |
+| `provisioner.provider` | `netscaler` | Direct Nitro API calls to the gateway — no Ingress CRs, no controller watches |
+| `leader_election.provider` | `mongo` | Leader election via MongoDB TTL documents — API server stays untouched |
 
-provisioner:
-  provider: "netscaler"                  # ROUTES_PROVISIONER_PROVIDER
-  endpoint: "https://10.0.0.1"           # ROUTES_PROVISIONER_ENDPOINT
-  username: "nsroot"                     # ROUTES_PROVISIONER_USERNAME
-  password: "secret"                     # ROUTES_PROVISIONER_PASSWORD
-  insecure_skip_verify: true             # ROUTES_PROVISIONER_INSECURE_SKIP_VERIFY
+### Kubernetes-native with external certificate management
 
-reconcile:
-  interval: "5m"                         # ROUTES_RECONCILE_INTERVAL
+Best when the application does not ship its own ingress controller but you want to stay Kubernetes-native and delegate TLS to an external tool like cert-manager. Routes are managed as Kubernetes Ingress resources, packed into a configurable number of Ingress objects to minimize API server load. The provisioner references TLS Secrets by a default naming convention (`tls-<hostname>`), which cert-manager or a cluster administrator can fulfil independently.
 
-leader_election:
-  enabled: false                         # ROUTES_LEADER_ELECTION_ENABLED
-  provider: "kube"                       # ROUTES_LEADER_ELECTION_PROVIDER — "kube" or "mongo"
-  lease_name: "routes-provisioner-leader"   # ROUTES_LEADER_ELECTION_LEASE_NAME
-  namespace: "default"                   # ROUTES_LEADER_ELECTION_NAMESPACE (kube only)
-  lease_duration: "15s"                  # ROUTES_LEADER_ELECTION_LEASE_DURATION
-  renew_deadline: "10s"                  # ROUTES_LEADER_ELECTION_RENEW_DEADLINE (kube only)
-  retry_interval: "2s"                   # ROUTES_LEADER_ELECTION_RETRY_INTERVAL
-```
+**Pipeline:** MongoDB change stream &rarr; Ingress provisioner &rarr; Kubernetes Ingress (packed rules)
 
-### Run
+Certificate issuance and storage are handled outside this application (e.g. cert-manager watches the Ingress annotations and creates the matching Secrets). The provisioner only needs to know the Secret naming convention so it can set the `tls.secretName` field on the Ingress.
 
-```bash
-cd cmd/routes-provisioner
-go build -o routes-provisioner .
-./routes-provisioner -config config.yaml
+**Key configuration:**
 
-# Or via env vars
-ROUTES_CONFIG_PATH=/etc/routes/config.yaml ./routes-provisioner
-```
+| Setting | Value | Why |
+|---|---|---|
+| `datasource.provider` | `mongodb` | Change stream trigger + desired state from the app database |
+| `certificate.provider` | `selfsigned` | Placeholder — cert-manager handles real issuance externally |
+| `certificate_store.enabled` | `false` | No cert store — Secrets are managed by cert-manager |
+| `provisioner.provider` | `ingress` | Manages Kubernetes Ingress resources with packed rules |
+| `provisioner.max_routes_per_ingress` | `50` | Pack up to 50 host rules per Ingress to minimize object count |
+| `provisioner.ingress_class` | `nginx` | Target the nginx ingress controller (or any other class) |
+| `leader_election.provider` | `kube` | Kubernetes Lease API — fits the K8s-native approach |
+
+### Kubernetes-native with integrated certificate management
+
+Same Kubernetes-native Ingress approach, but certificates are issued and stored by this application using certstore-kube. The ingress provisioner automatically references the correct TLS Secrets because the secret naming function is injected from certstore-kube — a single source of truth, no configuration duplication.
+
+**Pipeline:** MongoDB change stream &rarr; Vault PKI issuer &rarr; certstore-kube (K8s Secrets) &rarr; Ingress provisioner
+
+**Key configuration:**
+
+| Setting | Value | Why |
+|---|---|---|
+| `datasource.provider` | `mongodb` | Change stream trigger + desired state from the app database |
+| `certificate.provider` | `vault` | Vault PKI for certificate issuance |
+| `certificate_store.enabled` | `true` | Cache certs as K8s TLS Secrets |
+| `certificate_store.provider` | `kube` | Secrets in the same namespace as the Ingress resources |
+| `provisioner.provider` | `ingress` | Manages Kubernetes Ingress resources with packed rules |
+| `provisioner.max_routes_per_ingress` | `50` | Pack up to 50 host rules per Ingress to minimize object count |
 
 ## Building
 
-Requires Go 1.25.4+.
-
-```bash
-# Build a module
-cd cmd/routes-provisioner && go build ./...
-
-# Sync workspace after changes
-go work sync
-```
+Requires Go 1.25.4+. Build individual modules from their directory, or use the workspace from the root.
 
 ## Adding a new implementation
 
 1. Create `impl/<type>-<name>/` and init a Go module
 2. Add to `go.work` use block
 3. Implement the core interface with an extension interface for customization
-4. `go work sync && go build ./...`
+4. Run `go work sync` followed by `go build ./...`
 
 ## License
 
