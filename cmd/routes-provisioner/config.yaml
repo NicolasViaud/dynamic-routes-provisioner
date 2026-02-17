@@ -3,6 +3,15 @@ datasource:
   uri: "mongodb://localhost:27017"      # ROUTES_DATASOURCE_URI
   database: "mydb"                      # ROUTES_DATASOURCE_DATABASE
   collection: "routes"                  # ROUTES_DATASOURCE_COLLECTION
+  # --- mongodb mapper settings ---
+  mapper:
+    url_field: "url"                     # ROUTES_DATASOURCE_MAPPER_URL_FIELD — document field containing the URL
+    path: "/"                            # ROUTES_DATASOURCE_MAPPER_PATH — default route path
+    tls: true                            # ROUTES_DATASOURCE_MAPPER_TLS — enable TLS for routes
+    backends:                            # fixed backends applied to every route
+      - service_name: "app-svc"
+        port: 8080
+        weight: 100
 
 certificate:
   provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"

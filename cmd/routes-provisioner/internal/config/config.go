@@ -51,11 +51,25 @@ type ReconcileConfig struct {
 }
 
 type DatasourceConfig struct {
-	Provider   string `mapstructure:"provider"` // "mongodb" or "http"
-	URI        string `mapstructure:"uri"`
-	Database   string `mapstructure:"database"`
-	Collection string `mapstructure:"collection"`
-	ListenAddr string `mapstructure:"listen_addr"` // http only — address for the HTTP source API (default ":8081")
+	Provider   string       `mapstructure:"provider"` // "mongodb" or "http"
+	URI        string       `mapstructure:"uri"`
+	Database   string       `mapstructure:"database"`
+	Collection string       `mapstructure:"collection"`
+	ListenAddr string       `mapstructure:"listen_addr"` // http only — address for the HTTP source API (default ":8081")
+	Mapper     MapperConfig `mapstructure:"mapper"`      // mongodb only — document-to-route mapping
+}
+
+type MapperConfig struct {
+	URLField string          `mapstructure:"url_field"` // document field containing the URL (default "url")
+	Path     string          `mapstructure:"path"`      // default route path (default "/")
+	TLS      bool            `mapstructure:"tls"`       // whether to enable TLS (default true)
+	Backends []BackendConfig `mapstructure:"backends"`  // fixed backends applied to every route
+}
+
+type BackendConfig struct {
+	ServiceName string `mapstructure:"service_name"`
+	Port        int    `mapstructure:"port"`
+	Weight      int    `mapstructure:"weight"`
 }
 
 type CertificateConfig struct {
@@ -91,6 +105,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("datasource.provider", "mongodb")
 	v.SetDefault("datasource.collection", "routes")
 	v.SetDefault("datasource.listen_addr", ":8081")
+	v.SetDefault("datasource.mapper.url_field", "url")
+	v.SetDefault("datasource.mapper.path", "/")
+	v.SetDefault("datasource.mapper.tls", true)
 	v.SetDefault("certificate.provider", "acme-http")
 	v.SetDefault("certificate.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
 	v.SetDefault("certificate.challenge_port", 80)

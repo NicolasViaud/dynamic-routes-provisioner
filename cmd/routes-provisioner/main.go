@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	core "github.com/nicol/dynamic-route-provisioner/core"
 	"github.com/nicol/dynamic-route-provisioner/core/desired"
 	"github.com/nicol/dynamic-route-provisioner/core/orchestrator"
 	coreprov "github.com/nicol/dynamic-route-provisioner/core/provisioner"
@@ -85,8 +86,22 @@ func main() {
 		defer mongoClient.Disconnect(ctx)
 
 		collection := mongoClient.Database(cfg.Datasource.Database).Collection(cfg.Datasource.Collection)
-		trig = sourcemongo.New(collection, &source.MongoMapper{})
-		desiredState = sourcemongo.NewDesiredState(collection, &source.MongoMapper{})
+		backends := make([]core.Backend, len(cfg.Datasource.Mapper.Backends))
+		for i, b := range cfg.Datasource.Mapper.Backends {
+			backends[i] = core.Backend{
+				ServiceName: b.ServiceName,
+				Port:        b.Port,
+				Weight:      b.Weight,
+			}
+		}
+		mapper := &source.MongoMapper{
+			URLField: cfg.Datasource.Mapper.URLField,
+			Path:     cfg.Datasource.Mapper.Path,
+			TLS:      cfg.Datasource.Mapper.TLS,
+			Backends: backends,
+		}
+		trig = sourcemongo.New(collection, mapper)
+		desiredState = sourcemongo.NewDesiredState(collection, mapper)
 
 	case "http":
 		httpSource := sourcehttp.New(logger.With("component", "source-http"))

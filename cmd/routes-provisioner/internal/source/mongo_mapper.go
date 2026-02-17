@@ -16,8 +16,14 @@ import (
 var _ sourcemongo.DocumentMapper = (*MongoMapper)(nil)
 
 // MongoMapper watches the workspace collection for documents containing
-// a "url" field and converts them into RouteEvents.
-type MongoMapper struct{}
+// a URL field and converts them into RouteEvents. Field name, path, and TLS
+// behaviour are driven by configuration.
+type MongoMapper struct {
+	URLField string         // document field containing the URL
+	Path     string         // default route path
+	TLS      bool           // whether to enable TLS
+	Backends []core.Backend // fixed backends applied to every route
+}
 
 // Pipeline filters change events to only receive inserts, updates, and deletes.
 func (m *MongoMapper) Pipeline() mongo.Pipeline {
@@ -56,7 +62,7 @@ func (m *MongoMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core.Rou
 		return nil, nil
 	}
 
-	rawURL, ok := fullDoc["url"].(string)
+	rawURL, ok := fullDoc[m.URLField].(string)
 	if !ok || rawURL == "" {
 		return nil, nil
 	}
@@ -83,8 +89,9 @@ func (m *MongoMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core.Rou
 		Route: core.RouteRequest{
 			ID:        id,
 			Host:      host,
-			Path:      "/",
-			TLS:       true,
+			Path:      m.Path,
+			Backends:  m.Backends,
+			TLS:       m.TLS,
 			Metadata:  map[string]string{"source_url": rawURL},
 			CreatedAt: time.Now(),
 		},
@@ -94,7 +101,7 @@ func (m *MongoMapper) MapEvent(_ context.Context, changeEvent bson.M) (*core.Rou
 // MapDocument converts a full workspace document into a RouteRequest.
 // Used by the desired state provider during reconciliation.
 func (m *MongoMapper) MapDocument(_ context.Context, doc bson.M) (*core.RouteRequest, error) {
-	rawURL, ok := doc["url"].(string)
+	rawURL, ok := doc[m.URLField].(string)
 	if !ok || rawURL == "" {
 		return nil, nil
 	}
@@ -114,8 +121,9 @@ func (m *MongoMapper) MapDocument(_ context.Context, doc bson.M) (*core.RouteReq
 	return &core.RouteRequest{
 		ID:       id,
 		Host:     host,
-		Path:     "/",
-		TLS:      true,
+		Path:     m.Path,
+		Backends: m.Backends,
+		TLS:      m.TLS,
 		Metadata: map[string]string{"source_url": rawURL},
 	}, nil
 }
