@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	provnetscaler "github.com/nicol/dynamic-route-provisioner/provisioner-netscaler"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	provnetscaler "github.com/NicolasViaud/dynamic-route-provisioner/provisioner-netscaler"
 )
 
 // Compile-time check.

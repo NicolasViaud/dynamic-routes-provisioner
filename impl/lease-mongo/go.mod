@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/lease-mongo
+module github.com/NicolasViaud/dynamic-route-provisioner/lease-mongo
 
 go 1.25.4
 

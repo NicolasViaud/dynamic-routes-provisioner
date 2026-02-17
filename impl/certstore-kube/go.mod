@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/certstore-kube
+module github.com/NicolasViaud/dynamic-route-provisioner/certstore-kube
 
 go 1.25.4
 

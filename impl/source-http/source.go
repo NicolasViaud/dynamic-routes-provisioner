@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"sync"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/desired"
-	"github.com/nicol/dynamic-route-provisioner/core/trigger"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/desired"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/trigger"
 )
 
 // Compile-time checks.

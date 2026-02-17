@@ -1,6 +1,6 @@
 package provnetscaler
 
-import core "github.com/nicol/dynamic-route-provisioner/core"
+import core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 
 // ResourceMapper is the abstraction that developers implement to define how
 // a RouteRequest and Certificate translate into Nitro API operations.

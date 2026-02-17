@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/desired"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/desired"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )

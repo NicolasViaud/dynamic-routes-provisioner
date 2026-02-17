@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/lease-kube
+module github.com/NicolasViaud/dynamic-route-provisioner/lease-kube
 
 go 1.25.4
 

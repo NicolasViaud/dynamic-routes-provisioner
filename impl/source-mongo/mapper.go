@@ -3,7 +3,7 @@ package sourcemongo
 import (
 	"context"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	certacmehttp "github.com/nicol/dynamic-route-provisioner/cert-acme-http"
+	certacmehttp "github.com/NicolasViaud/dynamic-route-provisioner/cert-acme-http"
 )
 
 // Compile-time check.

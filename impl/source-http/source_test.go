@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 )
 
 func setup() (*HTTPSource, *httptest.Server) {

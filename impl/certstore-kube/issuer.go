@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/certificate"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/certificate"
 	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

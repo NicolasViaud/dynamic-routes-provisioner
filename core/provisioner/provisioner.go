@@ -3,7 +3,7 @@ package provisioner
 import (
 	"context"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 )
 
 // RouteProvisioner creates, updates, or deletes routes on a target gateway/proxy.

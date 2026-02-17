@@ -4,10 +4,10 @@ import (
 	"context"
 	"log/slog"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/certificate"
-	"github.com/nicol/dynamic-route-provisioner/core/desired"
-	"github.com/nicol/dynamic-route-provisioner/core/provisioner"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/certificate"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/desired"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/provisioner"
 )
 
 // Reconciler compares the desired state (source of truth) against the actual

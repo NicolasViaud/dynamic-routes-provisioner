@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/cert-vault
+module github.com/NicolasViaud/dynamic-route-provisioner/cert-vault
 
 go 1.25.4
 

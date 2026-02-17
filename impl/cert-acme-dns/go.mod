@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/cert-acme-dns
+module github.com/NicolasViaud/dynamic-route-provisioner/cert-acme-dns
 
 go 1.25.4
 

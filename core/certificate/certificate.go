@@ -3,7 +3,7 @@ package certificate
 import (
 	"context"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 )
 
 // Issuer obtains TLS certificates for a given host.

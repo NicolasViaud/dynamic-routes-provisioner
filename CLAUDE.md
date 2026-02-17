@@ -66,7 +66,7 @@ No tests yet. When adding: `go test ./...` from the module directory.
 
 ## Adding a new impl module
 
-1. `mkdir impl/<type>-<name>` + `go mod init github.com/nicol/dynamic-route-provisioner/<type>-<name>`
+1. `mkdir impl/<type>-<name>` + `go mod init github.com/NicolasViaud/dynamic-route-provisioner/<type>-<name>`
 2. Add to `go.work` use block
 3. Implement core interface + expose extension interface
 4. `go work sync && go build ./...`

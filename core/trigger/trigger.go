@@ -3,7 +3,7 @@ package trigger
 import (
 	"context"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 )
 
 // Trigger watches for route changes from an external source and emits events.

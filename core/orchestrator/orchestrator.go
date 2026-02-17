@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/certificate"
-	"github.com/nicol/dynamic-route-provisioner/core/lease"
-	"github.com/nicol/dynamic-route-provisioner/core/provisioner"
-	"github.com/nicol/dynamic-route-provisioner/core/reconciler"
-	"github.com/nicol/dynamic-route-provisioner/core/trigger"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/certificate"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/lease"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/provisioner"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/reconciler"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/trigger"
 )
 
 // Orchestrator coordinates the route provisioning pipeline. It runs two

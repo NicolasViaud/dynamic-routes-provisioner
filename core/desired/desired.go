@@ -3,7 +3,7 @@ package desired
 import (
 	"context"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
 )
 
 // DesiredStateProvider reads the full desired state from the source of truth.

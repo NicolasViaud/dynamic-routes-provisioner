@@ -10,8 +10,8 @@ import (
 	"encoding/pem"
 	"fmt"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/certificate"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/certificate"
 	"golang.org/x/crypto/acme"
 )
 

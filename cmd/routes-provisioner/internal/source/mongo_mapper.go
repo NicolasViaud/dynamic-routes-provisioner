@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"time"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	sourcemongo "github.com/nicol/dynamic-route-provisioner/source-mongo"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	sourcemongo "github.com/NicolasViaud/dynamic-route-provisioner/source-mongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )

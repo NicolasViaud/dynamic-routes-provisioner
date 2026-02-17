@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/certstore-vault
+module github.com/NicolasViaud/dynamic-route-provisioner/certstore-vault
 
 go 1.25.4
 

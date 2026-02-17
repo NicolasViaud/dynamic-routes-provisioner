@@ -1,4 +1,4 @@
-module github.com/nicol/dynamic-route-provisioner/source-mongo
+module github.com/NicolasViaud/dynamic-route-provisioner/source-mongo
 
 go 1.25.4
 

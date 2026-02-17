@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"sync"
 
-	core "github.com/nicol/dynamic-route-provisioner/core"
-	"github.com/nicol/dynamic-route-provisioner/core/provisioner"
+	core "github.com/NicolasViaud/dynamic-route-provisioner/core"
+	"github.com/NicolasViaud/dynamic-route-provisioner/core/provisioner"
 )
 
 // Compile-time check.
