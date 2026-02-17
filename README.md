@@ -1,7 +1,5 @@
 # Dynamic Route Provisioner
 
-A pluggable Go framework for automating TLS route provisioning on gateway and proxy appliances. Designed to run inside Kubernetes.
-
 ## Why Dynamic Route Provisioner?
 
 The traditional Kubernetes approach — cert-manager + HTTPRoute CRDs + an ingress controller — routes every change through the Kubernetes API server and etcd:
