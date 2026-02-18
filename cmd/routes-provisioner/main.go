@@ -295,6 +295,7 @@ func main() {
 		ingressMapper := &provisioner.IngressMapper{
 			SecretNameFunc:   secretNameFunc,
 			IngressClassName: cfg.Provisioner.IngressClass,
+			ExtraAnnotations: cfg.Provisioner.Annotations,
 		}
 		ingressOpts := []provingress.Option{
 			provingress.WithNamespace(cfg.Provisioner.Namespace),

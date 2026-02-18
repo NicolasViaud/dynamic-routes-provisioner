@@ -100,51 +100,55 @@ type ProvisionerConfig struct {
 	Password           string `mapstructure:"password"`
 	InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify"`
 	// --- ingress only ---
-	Namespace           string `mapstructure:"namespace"`              // K8s namespace for Ingress resources
-	MaxRoutesPerIngress int    `mapstructure:"max_routes_per_ingress"` // max rules per Ingress bucket
-	IngressClass        string `mapstructure:"ingress_class"`          // IngressClassName (empty for default)
+	Namespace           string            `mapstructure:"namespace"`              // K8s namespace for Ingress resources
+	MaxRoutesPerIngress int               `mapstructure:"max_routes_per_ingress"` // max rules per Ingress bucket
+	IngressClass        string            `mapstructure:"ingress_class"`          // IngressClassName (empty for default)
+	Annotations         map[string]string `mapstructure:"annotations"`            // extra annotations on managed Ingress resources (e.g. cert-manager.io/cluster-issuer)
 }
 
 // Load reads the YAML config file then applies environment variable overrides.
 // Environment variables use the ROUTES_ prefix with _ as the key delimiter.
 // For example, ROUTES_MONGODB_URI overrides mongodb.uri.
 func Load(path string) (*Config, error) {
-	v := viper.New()
+	// Use "::" as key delimiter so that annotation keys containing dots
+	// (e.g. "cert-manager.io/cluster-issuer") are not misinterpreted as
+	// nested Viper paths by the default "." delimiter.
+	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
 
 	// Defaults.
-	v.SetDefault("log.format", "json")
-	v.SetDefault("datasource.provider", "mongodb")
-	v.SetDefault("datasource.collection", "routes")
-	v.SetDefault("datasource.listen_addr", ":8081")
-	v.SetDefault("datasource.mapper.url_field", "url")
-	v.SetDefault("datasource.mapper.path", "/")
-	v.SetDefault("datasource.mapper.tls", true)
-	v.SetDefault("certificate.provider", "acme-http")
-	v.SetDefault("certificate.directory_url", "https://acme-v02.api.letsencrypt.org/directory")
-	v.SetDefault("certificate.challenge_port", 80)
-	v.SetDefault("certificate.validity", "8760h")
-	v.SetDefault("certificate.organization", "Self-Signed")
-	v.SetDefault("certificate.vault_mount", "pki")
-	v.SetDefault("certificate.vault_ttl", "720h")
-	v.SetDefault("certificate_store.enabled", false)
-	v.SetDefault("certificate_store.provider", "kube")
-	v.SetDefault("certificate_store.namespace", "default")
-	v.SetDefault("certificate_store.secret_prefix", "route-tls")
-	v.SetDefault("certificate_store.renew_before", "720h")
-	v.SetDefault("certificate_store.dir", ".certs")
-	v.SetDefault("certificate_store.vault_mount", "secret")
-	v.SetDefault("certificate_store.vault_prefix", "route-tls")
-	v.SetDefault("provisioner.provider", "netscaler")
-	v.SetDefault("provisioner.namespace", "default")
-	v.SetDefault("provisioner.max_routes_per_ingress", 50)
-	v.SetDefault("reconcile.interval", "5m")
-	v.SetDefault("leader_election.enabled", false)
-	v.SetDefault("leader_election.provider", "kube")
-	v.SetDefault("leader_election.lease_name", "routes-provisioner-leader")
-	v.SetDefault("leader_election.namespace", "default")
-	v.SetDefault("leader_election.lease_duration", "15s")
-	v.SetDefault("leader_election.renew_deadline", "10s")
-	v.SetDefault("leader_election.retry_interval", "2s")
+	v.SetDefault("log::format", "json")
+	v.SetDefault("datasource::provider", "mongodb")
+	v.SetDefault("datasource::collection", "routes")
+	v.SetDefault("datasource::listen_addr", ":8081")
+	v.SetDefault("datasource::mapper::url_field", "url")
+	v.SetDefault("datasource::mapper::path", "/")
+	v.SetDefault("datasource::mapper::tls", true)
+	v.SetDefault("certificate::provider", "acme-http")
+	v.SetDefault("certificate::directory_url", "https://acme-v02.api.letsencrypt.org/directory")
+	v.SetDefault("certificate::challenge_port", 80)
+	v.SetDefault("certificate::validity", "8760h")
+	v.SetDefault("certificate::organization", "Self-Signed")
+	v.SetDefault("certificate::vault_mount", "pki")
+	v.SetDefault("certificate::vault_ttl", "720h")
+	v.SetDefault("certificate_store::enabled", false)
+	v.SetDefault("certificate_store::provider", "kube")
+	v.SetDefault("certificate_store::namespace", "default")
+	v.SetDefault("certificate_store::secret_prefix", "route-tls")
+	v.SetDefault("certificate_store::renew_before", "720h")
+	v.SetDefault("certificate_store::dir", ".certs")
+	v.SetDefault("certificate_store::vault_mount", "secret")
+	v.SetDefault("certificate_store::vault_prefix", "route-tls")
+	v.SetDefault("provisioner::provider", "netscaler")
+	v.SetDefault("provisioner::namespace", "default")
+	v.SetDefault("provisioner::max_routes_per_ingress", 50)
+	v.SetDefault("reconcile::interval", "5m")
+	v.SetDefault("leader_election::enabled", false)
+	v.SetDefault("leader_election::provider", "kube")
+	v.SetDefault("leader_election::lease_name", "routes-provisioner-leader")
+	v.SetDefault("leader_election::namespace", "default")
+	v.SetDefault("leader_election::lease_duration", "15s")
+	v.SetDefault("leader_election::renew_deadline", "10s")
+	v.SetDefault("leader_election::retry_interval", "2s")
 
 	// YAML file.
 	v.SetConfigFile(path)
@@ -154,7 +158,7 @@ func Load(path string) (*Config, error) {
 
 	// Environment variable overrides with ROUTES_ prefix.
 	v.SetEnvPrefix("ROUTES")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.SetEnvKeyReplacer(strings.NewReplacer("::", "_"))
 	v.AutomaticEnv()
 
 	cfg := &Config{}

@@ -150,6 +150,8 @@ Best when you want to stay Kubernetes-native and delegate TLS entirely to cert-m
 
 cert-manager handles issuance and renewal entirely outside this application. The provisioner only needs to know the Secret naming convention so it can set the `tls.secretName` field on the Ingress.
 
+> **Important:** cert-manager does not trigger on the `spec.tls` field alone. It requires either a `cert-manager.io/cluster-issuer` or `cert-manager.io/issuer` annotation on the Ingress to know which issuer to use. Set this via `provisioner.annotations` — it will be applied to every managed Ingress resource.
+
 **Example configuration:**
 
 ```yaml
@@ -179,6 +181,8 @@ provisioner:
   namespace: "default"
   max_routes_per_ingress: 50
   ingress_class: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # tells cert-manager which ClusterIssuer to use
 
 reconcile:
   interval: "5m"

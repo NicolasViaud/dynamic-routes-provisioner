@@ -93,19 +93,29 @@ func (p *IngressProvisioner) Provision(ctx context.Context, req core.RouteReques
 		}
 	}
 
-	// Find an Ingress with available capacity or create a new one.
-	ingress, err := p.findOrCreateWithCapacity(ctx, ingresses)
-	if err != nil {
-		return nil, err
+	// Find an Ingress with available capacity, or create a new one with the
+	// rule embedded (Kubernetes rejects Ingresses with neither rules nor defaultBackend).
+	var ingressName string
+	if existing := p.findWithCapacity(ingresses); existing != nil {
+		if err := p.patchAddRule(ctx, existing.Name, rule, tlsEntry); err != nil {
+			return nil, fmt.Errorf("patch add rule: %w", err)
+		}
+		ingressName = existing.Name
+	} else {
+		var tls []networkingv1.IngressTLS
+		if tlsEntry != nil {
+			tls = []networkingv1.IngressTLS{*tlsEntry}
+		}
+		created, err := p.createIngressWithRules(ctx, len(ingresses), []networkingv1.IngressRule{rule}, tls)
+		if err != nil {
+			return nil, err
+		}
+		ingressName = created.Name
 	}
 
-	if err := p.patchAddRule(ctx, ingress.Name, rule, tlsEntry); err != nil {
-		return nil, fmt.Errorf("patch add rule: %w", err)
-	}
+	p.logger.Info("provisioned route", "routeID", routeID, "ingress", ingressName)
 
-	p.logger.Info("provisioned route", "routeID", routeID, "ingress", ingress.Name)
-
-	return p.buildProvisionedRoute(routeID, req.Host, ingress.Name, cert), nil
+	return p.buildProvisionedRoute(routeID, req.Host, ingressName, cert), nil
 }
 
 // Deprovision removes a route by deleting its IngressRule from the containing
@@ -216,9 +226,11 @@ func (p *IngressProvisioner) BatchProvision(ctx context.Context, routes []core.R
 	})
 
 	// Pack routes into Ingresses.
+	// needsPatch is false for newly-created Ingresses whose rules are already embedded.
 	type batch struct {
 		ingressName string
 		routes      []mappedRoute
+		needsPatch  bool
 	}
 	var batches []batch
 	cursor := 0
@@ -235,11 +247,12 @@ func (p *IngressProvisioner) BatchProvision(ctx context.Context, routes []core.R
 		if end > len(mapped) {
 			end = len(mapped)
 		}
-		batches = append(batches, batch{ingressName: ing.Name, routes: mapped[cursor:end]})
+		batches = append(batches, batch{ingressName: ing.Name, routes: mapped[cursor:end], needsPatch: true})
 		cursor = end
 	}
 
-	// Create new Ingresses for remaining routes.
+	// Create new Ingresses for remaining routes with rules embedded at creation
+	// time — Kubernetes rejects Ingresses with neither rules nor defaultBackend.
 	newIndex := len(ingresses)
 	for cursor < len(mapped) {
 		end := cursor + p.cfg.maxRoutesPerIngress
@@ -247,29 +260,40 @@ func (p *IngressProvisioner) BatchProvision(ctx context.Context, routes []core.R
 			end = len(mapped)
 		}
 
-		ing, err := p.createIngress(ctx, newIndex)
+		batchRoutes := mapped[cursor:end]
+		rules := make([]networkingv1.IngressRule, len(batchRoutes))
+		var tls []networkingv1.IngressTLS
+		for i, mr := range batchRoutes {
+			rules[i] = mr.rule
+			if mr.tls != nil {
+				tls = append(tls, *mr.tls)
+			}
+		}
+
+		ing, err := p.createIngressWithRules(ctx, newIndex, rules, tls)
 		if err != nil {
 			return nil, err
 		}
-		batches = append(batches, batch{ingressName: ing.Name, routes: mapped[cursor:end]})
+		batches = append(batches, batch{ingressName: ing.Name, routes: batchRoutes, needsPatch: false})
 		cursor = end
 		newIndex++
 	}
 
-	// Apply each batch as a single patch.
+	// Apply patches for existing Ingresses; newly created ones already have their rules.
 	var results []core.ProvisionedRoute
 	for _, b := range batches {
-		rules := make([]networkingv1.IngressRule, len(b.routes))
-		var tlsEntries []networkingv1.IngressTLS
-		for i, mr := range b.routes {
-			rules[i] = mr.rule
-			if mr.tls != nil {
-				tlsEntries = append(tlsEntries, *mr.tls)
+		if b.needsPatch {
+			rules := make([]networkingv1.IngressRule, len(b.routes))
+			var tlsEntries []networkingv1.IngressTLS
+			for i, mr := range b.routes {
+				rules[i] = mr.rule
+				if mr.tls != nil {
+					tlsEntries = append(tlsEntries, *mr.tls)
+				}
 			}
-		}
-
-		if err := p.patchAddRules(ctx, b.ingressName, rules, tlsEntries); err != nil {
-			return nil, fmt.Errorf("patch ingress %s: %w", b.ingressName, err)
+			if err := p.patchAddRules(ctx, b.ingressName, rules, tlsEntries); err != nil {
+				return nil, fmt.Errorf("patch ingress %s: %w", b.ingressName, err)
+			}
 		}
 
 		for _, mr := range b.routes {
@@ -366,16 +390,19 @@ func (p *IngressProvisioner) listManagedIngresses(ctx context.Context) ([]networ
 	return list.Items, nil
 }
 
-func (p *IngressProvisioner) findOrCreateWithCapacity(ctx context.Context, ingresses []networkingv1.Ingress) (*networkingv1.Ingress, error) {
+func (p *IngressProvisioner) findWithCapacity(ingresses []networkingv1.Ingress) *networkingv1.Ingress {
 	for i := range ingresses {
 		if len(ingresses[i].Spec.Rules) < p.cfg.maxRoutesPerIngress {
-			return &ingresses[i], nil
+			return &ingresses[i]
 		}
 	}
-	return p.createIngress(ctx, len(ingresses))
+	return nil
 }
 
-func (p *IngressProvisioner) createIngress(ctx context.Context, index int) (*networkingv1.Ingress, error) {
+// createIngressWithRules creates a new Ingress pre-populated with the given rules
+// and TLS entries. Kubernetes requires at least one rule or a defaultBackend, so
+// callers must always supply at least one rule.
+func (p *IngressProvisioner) createIngressWithRules(ctx context.Context, index int, rules []networkingv1.IngressRule, tls []networkingv1.IngressTLS) (*networkingv1.Ingress, error) {
 	ingressClass := p.mapper.IngressClass()
 	var ingressClassName *string
 	if ingressClass != "" {
@@ -391,6 +418,8 @@ func (p *IngressProvisioner) createIngress(ctx context.Context, index int) (*net
 		},
 		Spec: networkingv1.IngressSpec{
 			IngressClassName: ingressClassName,
+			Rules:            rules,
+			TLS:              tls,
 		},
 	}
 

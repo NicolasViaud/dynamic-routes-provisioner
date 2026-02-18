@@ -75,6 +75,8 @@ provisioner:
   # namespace: "default"                  # ROUTES_PROVISIONER_NAMESPACE — K8s namespace for Ingress resources
   # max_routes_per_ingress: 50            # ROUTES_PROVISIONER_MAX_ROUTES_PER_INGRESS — max rules per Ingress bucket
   # ingress_class: "nginx"                # ROUTES_PROVISIONER_INGRESS_CLASS — IngressClassName (empty for default)
+  # annotations:                          # extra annotations added to every managed Ingress resource
+  #   cert-manager.io/cluster-issuer: "letsencrypt-prod"  # trigger cert-manager to issue certificates
 
 reconcile:
   interval: "5m"  # ROUTES_RECONCILE_INTERVAL — how often to reconcile desired vs actual state

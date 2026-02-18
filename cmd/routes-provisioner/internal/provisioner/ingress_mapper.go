@@ -33,7 +33,8 @@ type IngressMapper struct {
 	// also be a static function for admin-managed Secrets.
 	// Must not be nil.
 	SecretNameFunc   func(host string) string
-	IngressClassName string // e.g. "nginx", empty for cluster default
+	IngressClassName string            // e.g. "nginx", empty for cluster default
+	ExtraAnnotations map[string]string // e.g. {"cert-manager.io/cluster-issuer": "letsencrypt-prod"}
 }
 
 // RouteID derives a stable route identifier from the request host.
@@ -98,7 +99,7 @@ func (m *IngressMapper) IngressName(index int) string {
 
 // Annotations returns annotations for managed Ingress resources.
 func (m *IngressMapper) Annotations() map[string]string {
-	return nil
+	return m.ExtraAnnotations
 }
 
 // Labels returns labels for managed Ingress resources.
