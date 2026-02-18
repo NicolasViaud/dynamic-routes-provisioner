@@ -252,6 +252,12 @@ leader_election:
 
 Requires Go 1.25.4+. Build individual modules from their directory, or use the workspace from the root.
 
+### Docker
+
+```bash
+docker build -t routes-provisioner:latest .
+```
+
 ## Adding a new implementation
 
 1. Create `impl/<type>-<name>/` and init a Go module

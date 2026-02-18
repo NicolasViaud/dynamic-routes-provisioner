@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: routes-provisioner
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: routes-provisioner
+  namespace: routes-provisioner
+---
+# RBAC: Leases for leader election (coordination/v1)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: routes-provisioner
+  namespace: routes-provisioner
+rules:
+  # Leader election via coordination/v1 Leases
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+  # Certificate store — K8s TLS Secrets
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  # Ingress provisioner
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: routes-provisioner
+  namespace: routes-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: routes-provisioner
+    namespace: routes-provisioner
+roleRef:
+  kind: Role
+  name: routes-provisioner
+  apiGroup: rbac.authorization.k8s.io
+---
+# Sensitive values injected as environment variables.
+# Each key maps to a ROUTES_* env var that overrides the corresponding config field.
+# Only include the keys relevant to your chosen providers.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: routes-provisioner-secrets
+  namespace: routes-provisioner
+type: Opaque
+stringData:
+  # --- Datasource (MongoDB) ---
+  ROUTES_DATASOURCE_URI: "mongodb://user:password@mongo:27017"         # MongoDB connection string
+
+  # --- Provisioner (Netscaler) ---
+  # ROUTES_PROVISIONER_USERNAME: "nsroot"                              # Netscaler API username
+  # ROUTES_PROVISIONER_PASSWORD: "secret"                              # Netscaler API password
+
+  # --- Certificate issuer (Vault PKI) ---
+  # ROUTES_CERTIFICATE_VAULT_TOKEN: "hvs.xxxxx"                       # Vault token for PKI issuer
+
+  # --- Certificate store (Vault KV v2) ---
+  # ROUTES_CERTIFICATE_STORE_VAULT_TOKEN: "hvs.xxxxx"                 # Vault token for KV v2 store
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: routes-provisioner-config
+  namespace: routes-provisioner
+data:
+  config.yaml: |
+    datasource:
+      provider: "mongodb"
+      uri: "mongodb://mongo:27017"
+      database: "mydb"
+      collections:
+        - collection: "routes"
+          mapper:
+            url_field: "url"
+            path: "/"
+            tls: true
+            backends:
+              - service_name: "app-svc"
+                port: 8080
+                weight: 100
+
+    certificate:
+      provider: "selfsigned"
+      validity: "8760h"
+      organization: "Self-Signed"
+
+    certificate_store:
+      enabled: false
+
+    provisioner:
+      provider: "netscaler"
+      endpoint: "https://10.0.0.1"
+      insecure_skip_verify: true
+      # credentials injected via env vars:
+      #   ROUTES_PROVISIONER_USERNAME
+      #   ROUTES_PROVISIONER_PASSWORD
+
+    reconcile:
+      interval: "5m"
+
+    leader_election:
+      enabled: true
+      provider: "kube"
+      lease_name: "routes-provisioner-leader"
+      namespace: "routes-provisioner"
+      lease_duration: "15s"
+      renew_deadline: "10s"
+      retry_interval: "2s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: routes-provisioner
+  namespace: routes-provisioner
+  labels:
+    app: routes-provisioner
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: routes-provisioner
+  template:
+    metadata:
+      labels:
+        app: routes-provisioner
+    spec:
+      serviceAccountName: routes-provisioner
+      containers:
+        - name: routes-provisioner
+          image: routes-provisioner:latest
+          args:
+            - "--config=/etc/routes-provisioner/config.yaml"
+          envFrom:
+            - secretRef:
+                name: routes-provisioner-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/routes-provisioner
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: routes-provisioner-config

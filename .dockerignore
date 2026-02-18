@@ -1,0 +1,22 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Documentation
+README.md
+CLAUDE.md
+LICENSE
+
+# Deploy manifests
+deploy/
+
+# Local/test artifacts
+.certs
+*.test
+coverage.out
