@@ -80,7 +80,7 @@ type BackendConfig struct {
 }
 
 type CertificateConfig struct {
-	Provider      string `mapstructure:"provider"`       // "acme-http", "acme-dns", "selfsigned", or "vault"
+	Provider      string `mapstructure:"provider"`       // "none", "acme-http", "acme-dns", "selfsigned", or "vault"
 	Email         string `mapstructure:"email"`          // acme-http/acme-dns
 	DirectoryURL  string `mapstructure:"directory_url"`  // acme-http/acme-dns
 	ChallengePort int    `mapstructure:"challenge_port"` // acme-http only
@@ -227,9 +227,9 @@ func validate(c *Config) error {
 		return fmt.Errorf("provisioner.provider must be 'netscaler', 'ingress', or 'log' (or set ROUTES_PROVISIONER_PROVIDER)")
 	}
 	switch c.Certificate.Provider {
-	case "acme-http", "acme-dns", "selfsigned", "vault":
+	case "none", "acme-http", "acme-dns", "selfsigned", "vault":
 	default:
-		return fmt.Errorf("certificate.provider must be 'acme-http', 'acme-dns', 'selfsigned', or 'vault' (or set ROUTES_CERTIFICATE_PROVIDER)")
+		return fmt.Errorf("certificate.provider must be 'none', 'acme-http', 'acme-dns', 'selfsigned', or 'vault' (or set ROUTES_CERTIFICATE_PROVIDER)")
 	}
 	if c.CertificateStore.Enabled {
 		switch c.CertificateStore.Provider {

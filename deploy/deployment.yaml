@@ -124,7 +124,7 @@ metadata:
   labels:
     app: routes-provisioner
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: routes-provisioner

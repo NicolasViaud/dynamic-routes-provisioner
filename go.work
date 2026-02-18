@@ -5,6 +5,7 @@ use (
 	./core
 	./impl/cert-acme-dns
 	./impl/cert-acme-http
+	./impl/cert-none
 	./impl/cert-selfsigned
 	./impl/cert-vault
 	./impl/certstore-file

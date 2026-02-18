@@ -19,13 +19,18 @@ core/                              # Interfaces + domain model (no external deps
   orchestrator/                    # Orchestrator — wires everything, supports leader election
 impl/                              # Implementation modules (each its own Go module)
   source-mongo/                    # MongoDB change stream trigger + desired state (ext: DocumentMapper)
+  source-http/                     # HTTP API trigger + desired state (with Swagger)
+  cert-none/                       # No-op issuer — delegates cert management to external tool (e.g. cert-manager)
   cert-acme-dns/                   # ACME DNS-01 issuer (ext: DNSProvider)
   cert-acme-http/                  # ACME HTTP-01 issuer (ext: ChallengeSolver)
   cert-selfsigned/                 # Self-signed certificate issuer (testing)
   cert-vault/                      # HashiCorp Vault PKI issuer (role-based)
   certstore-kube/                  # Certificate store — K8s TLS Secrets (caching decorator)
   certstore-vault/                 # Certificate store — Vault KV v2 (caching decorator)
+  certstore-file/                  # Certificate store — local filesystem (caching decorator)
   provisioner-netscaler/           # Netscaler CPX via Nitro API (ext: ResourceMapper)
+  provisioner-ingress/             # Kubernetes Ingress resources with configurable packing
+  provisioner-log/                 # Logging-only provisioner (testing/development)
   lease-mongo/                     # MongoDB-based leader election
   lease-kube/                      # Kubernetes Lease API leader election (coordination/v1)
 cmd/
@@ -54,7 +59,7 @@ No tests yet. When adding: `go test ./...` from the module directory.
 ## Conventions
 
 - Strategy + Pipeline pattern: each impl exposes an extension interface + functional options
-- Each impl module: main struct file, extension interface (`mapper.go`/`solver.go`), `options.go`
+- Each non-trivial impl module: main struct file, extension interface (`mapper.go`/`solver.go`), `options.go` — simple impls (e.g. `cert-none`) may omit these
 - Compile-time interface assertions: `var _ <interface> = (*Struct)(nil)`
 - `context.Context` on all blocking/IO methods, `log/slog` for logging
 - `go.work` for local module resolution (not published remotely yet)

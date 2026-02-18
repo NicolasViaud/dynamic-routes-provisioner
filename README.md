@@ -57,6 +57,7 @@ Go workspace monorepo: `core/` for interfaces, `impl/` for implementations, `cmd
 |---|---|---|---|
 | `source-mongo` | `Trigger` + `DesiredStateProvider` | `DocumentMapper` | MongoDB change streams + full collection listing for reconciliation |
 | `source-http` | `Trigger` + `DesiredStateProvider` | — | HTTP API trigger with Swagger documentation |
+| `cert-none` | `Issuer` | — | No-op issuer — delegates certificate management entirely to an external tool (e.g. cert-manager) |
 | `cert-acme-dns` | `Issuer` | `DNSProvider` | ACME DNS-01 challenges (supports wildcards) |
 | `cert-acme-http` | `Issuer` | `ChallengeSolver` | ACME HTTP-01 challenges |
 | `cert-selfsigned` | `Issuer` | — | Self-signed certificates for testing/development |
@@ -141,13 +142,13 @@ leader_election:
   retry_interval: "2s"
 ```
 
-### Kubernetes-native with external certificate management
+### Kubernetes-native with external certificate management (cert-manager)
 
-Best when the application does not ship its own ingress controller but you want to stay Kubernetes-native and delegate TLS to an external tool like cert-manager. Routes are managed as Kubernetes Ingress resources, packed into a configurable number of Ingress objects to minimize API server load. The provisioner references TLS Secrets by a default naming convention (`tls-<hostname>`), which cert-manager or a cluster administrator can fulfil independently.
+Best when you want to stay Kubernetes-native and delegate TLS entirely to cert-manager. Routes are managed as Kubernetes Ingress resources, packed into a configurable number of Ingress objects to minimise API server load. The `cert-none` issuer signals that this application does not manage certificates at all — cert-manager watches the Ingress annotations and creates the matching TLS Secrets independently. The provisioner references those Secrets by a default naming convention (`tls-<hostname>`).
 
 **Pipeline:** MongoDB change stream &rarr; Ingress provisioner &rarr; Kubernetes Ingress (packed rules)
 
-Certificate issuance and storage are handled outside this application (e.g. cert-manager watches the Ingress annotations and creates the matching Secrets). The provisioner only needs to know the Secret naming convention so it can set the `tls.secretName` field on the Ingress.
+cert-manager handles issuance and renewal entirely outside this application. The provisioner only needs to know the Secret naming convention so it can set the `tls.secretName` field on the Ingress.
 
 **Example configuration:**
 
@@ -168,7 +169,7 @@ datasource:
             weight: 100
 
 certificate:
-  provider: "selfsigned"            # placeholder — cert-manager handles real issuance
+  provider: "none"                  # cert-manager handles issuance and renewal
 
 certificate_store:
   enabled: false                    # Secrets are managed by cert-manager

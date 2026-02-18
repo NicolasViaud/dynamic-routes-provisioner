@@ -34,7 +34,7 @@ datasource:
   #       weight: 100
 
 certificate:
-  provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "acme-http", "acme-dns", "selfsigned", or "vault"
+  provider: "selfsigned"                # ROUTES_CERTIFICATE_PROVIDER — "none", "acme-http", "acme-dns", "selfsigned", or "vault"
   # --- acme-http / acme-dns common settings ---
   # email: "admin@example.com"            # ROUTES_CERTIFICATE_EMAIL
   # directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory"  # ROUTES_CERTIFICATE_DIRECTORY_URL

@@ -21,6 +21,7 @@ import (
 
 	certacmedns "github.com/NicolasViaud/dynamic-route-provisioner/cert-acme-dns"
 	certacmehttp "github.com/NicolasViaud/dynamic-route-provisioner/cert-acme-http"
+	certnone "github.com/NicolasViaud/dynamic-route-provisioner/cert-none"
 	certselfsigned "github.com/NicolasViaud/dynamic-route-provisioner/cert-selfsigned"
 	certvault "github.com/NicolasViaud/dynamic-route-provisioner/cert-vault"
 	certstorefile "github.com/NicolasViaud/dynamic-route-provisioner/certstore-file"
@@ -137,6 +138,8 @@ func main() {
 	// --- Certificate issuer ---
 	var issuer corecert.Issuer
 	switch cfg.Certificate.Provider {
+	case "none":
+		issuer = certnone.New()
 	case "acme-http":
 		challengeServer := certificate.NewChallengeServer(cfg.Certificate.ChallengePort)
 		acmeOpts := []certacmehttp.Option{
